@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { K6RunHistoryEntry, RequestDefinition } from '../../models/types'
+import type { AppData, Collection, K6RunHistoryEntry, RequestDefinition } from '../../models/types'
 import { buildRunHistoryHtml } from '../reporting/exportHistoryHtml'
 import { WorkspaceReportPanel } from './WorkspaceReportPanel'
+import { extractPerRequestMetricsFromSummary } from '../../k6/summaryPerRequest'
 
 type Props = {
+  mode: 'request' | 'collection'
   request: RequestDefinition | null
-  history: K6RunHistoryEntry[]
-  onDeleteEntry: (entryId: string) => void
+  collection: Collection | null
+  data: AppData | null
+  onDeleteEntry: (requestId: string, entryId: string) => void
+  onDeleteRunById: (runId: string) => void
 }
 
 function diffLabel(prev: number | null, cur: number | null) {
@@ -16,19 +20,59 @@ function diffLabel(prev: number | null, cur: number | null) {
   return `${sign}${d.toFixed(1)}`
 }
 
+function pickLatestCollectionRun(data: AppData | null, collection: Collection | null): K6RunHistoryEntry | null {
+  if (!data || !collection) return null
+  let best: K6RunHistoryEntry | null = null
+  for (const r of collection.requests) {
+    const list = data.k6RunHistoryByRequest?.[r.id] ?? []
+    for (const e of list) {
+      if (e.scope !== 'collection' || e.collectionId !== collection.id) continue
+      if (!best || e.at > best.at) best = e
+    }
+  }
+  return best
+}
+
 export function WorkspaceReportingPanel(props: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const rows = useMemo(() => [...props.history].reverse(), [props.history])
+  const history = props.mode === 'request' && props.request ? props.data?.k6RunHistoryByRequest?.[props.request.id] ?? [] : []
+
+  const rows = useMemo(() => [...history].reverse(), [history])
   const selected = rows.find((r) => r.id === selectedId) ?? rows[0] ?? null
+
+  const latestCollectionRun = useMemo(
+    () => (props.mode === 'collection' ? pickLatestCollectionRun(props.data, props.collection) : null),
+    [props.mode, props.data, props.collection],
+  )
+
+  const perRequestRows = useMemo(() => {
+    if (!latestCollectionRun?.summaryJson || !props.collection) return []
+    const tagged = extractPerRequestMetricsFromSummary(latestCollectionRun.summaryJson)
+    const byId = new Map(tagged.map((t) => [t.requestId, t]))
+    return props.collection.requests.map((req) => {
+      const row = byId.get(req.id)
+      const excluded = !!req.excludeFromAggregateReport || row?.reportingExcluded
+      return {
+        id: req.id,
+        name: req.name,
+        avgMs: row?.avgMs ?? null,
+        p95Ms: row?.p95Ms ?? null,
+        errorRate: row?.errorRate ?? null,
+        rps: row?.rps ?? null,
+        excluded,
+        noData: !row,
+      }
+    })
+  }, [latestCollectionRun?.summaryJson, props.collection])
 
   useEffect(() => {
     setSelectedId(null)
-  }, [props.request?.id])
+  }, [props.request?.id, props.mode, props.collection?.id])
 
   const download = () => {
     if (!props.request) return
-    const html = buildRunHistoryHtml(props.request.name, props.history)
+    const html = buildRunHistoryHtml(props.request.name, history)
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -37,6 +81,88 @@ export function WorkspaceReportingPanel(props: Props) {
     a.download = `${props.request.name.replace(/\s+/g, '_')}_history_${dateStr}.html`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  if (props.mode === 'collection') {
+    return (
+      <div className="ws-reporting">
+        <div className="ws-reporting-head">
+          <div>
+            <div className="ws-title">Reporting (collection)</div>
+            <p className="muted" style={{ margin: '6px 0 0' }}>
+              Per-request metrics from the latest whole-collection k6 run. Toggle “Exclude from aggregate report” on each request to keep login/logout out of
+              summary KPIs.
+            </p>
+          </div>
+          {latestCollectionRun ? (
+            <button
+              type="button"
+              className="ws-btn danger"
+              onClick={() => {
+                if (window.confirm('Remove this collection run from history for all requests?')) {
+                  props.onDeleteRunById(latestCollectionRun.runId)
+                }
+              }}
+            >
+              Delete latest run
+            </button>
+          ) : null}
+        </div>
+
+        {!latestCollectionRun ? (
+          <div className="ws-muted-panel">No collection k6 runs yet. Set Export to “Whole collection”, generate script, then Run from the top bar.</div>
+        ) : (
+          <div className="ws-reporting-body" style={{ flexDirection: 'column', gap: 16 }}>
+            <p className="muted tiny">
+              Run <span className="mono">{latestCollectionRun.runId}</span> at {new Date(latestCollectionRun.at).toLocaleString()} —{' '}
+              <span className={`pill ws-run-status ws-run-status--${latestCollectionRun.status}`}>{latestCollectionRun.status}</span>
+            </p>
+
+            <div className="ws-panel">
+              <div className="ws-title" style={{ marginBottom: 10 }}>
+                Per request
+              </div>
+              <table className="ws-diff">
+                <thead>
+                  <tr>
+                    <th>Request</th>
+                    <th>Avg (ms)</th>
+                    <th>p95 (ms)</th>
+                    <th>Errors</th>
+                    <th>RPS</th>
+                    <th>Report</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perRequestRows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.name}</td>
+                      <td>{row.avgMs == null ? '—' : row.avgMs.toFixed(1)}</td>
+                      <td>{row.p95Ms == null ? '—' : row.p95Ms.toFixed(1)}</td>
+                      <td>{row.errorRate == null ? '—' : `${(row.errorRate * 100).toFixed(3)}%`}</td>
+                      <td>{row.rps == null ? '—' : row.rps.toFixed(2)}</td>
+                      <td>
+                        {row.excluded ? <span className="muted">Excluded from aggregate</span> : <span>Included</span>}
+                        {row.noData ? <span className="muted tiny"> (no tagged metrics — regenerate k6)</span> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <WorkspaceReportPanel
+              summaryJson={latestCollectionRun.summaryJson ?? null}
+              runId={latestCollectionRun.runId}
+              reportHtmlPath={null}
+              request={null}
+              embedded
+              aggregateKpisExcludeHiddenRequests
+            />
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -48,12 +174,12 @@ export function WorkspaceReportingPanel(props: Props) {
             Timeline for <span className="mono">{props.request?.name ?? '—'}</span>. Pick a row to compare against the previous run.
           </p>
         </div>
-        <button type="button" className="ws-btn" disabled={!props.request || !props.history.length} onClick={download}>
+        <button type="button" className="ws-btn" disabled={!props.request || !history.length} onClick={download}>
           Download history HTML
         </button>
       </div>
 
-      {!props.request || !props.history.length ? (
+      {!props.request || !history.length ? (
         <div className="ws-muted-panel">No saved runs for this request yet. Run k6 from the top bar to build history.</div>
       ) : (
         <div className="ws-reporting-body">
@@ -71,9 +197,7 @@ export function WorkspaceReportingPanel(props: Props) {
                     </div>
                     <div className="ws-history-metrics">
                       <span>Avg {e.metrics.avgMs == null ? '—' : `${e.metrics.avgMs.toFixed(0)}ms`}</span>
-                      <span className="muted">
-                        Δ {diffLabel(prev?.metrics.avgMs ?? null, e.metrics.avgMs)} ms vs prev
-                      </span>
+                      <span className="muted">Δ {diffLabel(prev?.metrics.avgMs ?? null, e.metrics.avgMs)} ms vs prev</span>
                     </div>
                   </button>
                   <button
@@ -81,7 +205,14 @@ export function WorkspaceReportingPanel(props: Props) {
                     className="ws-btn-icon danger"
                     title="Delete this run"
                     style={{ position: 'absolute', top: 6, right: 6 }}
-                    onClick={(ev) => { ev.stopPropagation(); props.onDeleteEntry(e.id) }}
+                    onClick={(ev) => {
+                      ev.stopPropagation()
+                      if (e.scope === 'collection' && window.confirm('Remove this collection run from all requests in history?')) {
+                        props.onDeleteRunById(e.runId)
+                      } else {
+                        props.onDeleteEntry(props.request!.id, e.id)
+                      }
+                    }}
                   >
                     ✕
                   </button>
@@ -144,7 +275,14 @@ export function WorkspaceReportingPanel(props: Props) {
                   )
                 })()}
                 <div style={{ marginTop: 14 }}>
-                  <WorkspaceReportPanel summaryJson={selected.summaryJson ?? null} runId={selected.runId} reportHtmlPath={null} request={props.request} embedded />
+                  <WorkspaceReportPanel
+                    summaryJson={selected.summaryJson ?? null}
+                    runId={selected.runId}
+                    reportHtmlPath={null}
+                    request={props.request}
+                    embedded
+                    aggregateKpisExcludeHiddenRequests={selected.scope === 'collection'}
+                  />
                 </div>
               </>
             ) : null}

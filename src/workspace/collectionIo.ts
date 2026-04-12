@@ -67,11 +67,16 @@ export function parsePerfMixCollectionImport(
     if (!methods.has(String(r.method).toUpperCase())) return { ok: false, error: `Invalid method on request "${r.name}".` }
   }
 
+  const exec = col.k6CollectionExecution
   const collection: Collection = {
     id: buildId('col'),
     name: String(col.name).trim(),
     variables: isRecord(col.variables) ? (col.variables as Record<string, string>) : {},
     docs: typeof col.docs === 'string' ? col.docs : undefined,
+    k6CollectionExecution: exec === 'parallel' || exec === 'sequential' ? exec : undefined,
+    k6LoadVus: typeof col.k6LoadVus === 'number' && Number.isFinite(col.k6LoadVus) ? col.k6LoadVus : undefined,
+    k6LoadDuration: typeof col.k6LoadDuration === 'string' ? col.k6LoadDuration : undefined,
+    k6LoadRampUp: typeof col.k6LoadRampUp === 'string' ? col.k6LoadRampUp : undefined,
     requests: requests.map((r) => remapRequest({ ...r, query: r.query ?? {}, headers: r.headers ?? {}, bodyText: r.bodyText ?? '', testCases: r.testCases ?? [] })),
   }
 

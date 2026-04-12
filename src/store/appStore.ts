@@ -16,6 +16,7 @@ import type {
 } from '../models/types'
 import { migrateRequestTestCaseToggles } from '../models/types'
 import { extractGlobalMetricsFromSummary } from '../k6/summaryMetrics'
+import { metricsForRequestId, extractPerRequestMetricsFromSummary } from '../k6/summaryPerRequest'
 import { useAuthStore } from './authStore'
 
 const STORAGE_PREFIX = 'perfmix-app-data-v4-'
@@ -201,6 +202,8 @@ type AppStore = {
     summaryJson: string | null
   }) => void
   deleteK6RunHistoryEntry: (requestId: string, entryId: string) => void
+  /** Removes every history entry with this run id (used for collection runs stored per request). */
+  deleteK6RunHistoryEntriesByRunId: (runId: string) => void
   stopK6Run: () => Promise<void>
   executeK6Run: () => Promise<{ runId: string | null; status: K6RunStatus | 'idle' | 'failed'; summaryJson: string | null }>
   initializeProject: (name: string, environment: string, runner: string) => void
@@ -353,9 +356,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const current = get().data
     if (!current) return
     const hist: Record<string, K6RunHistoryEntry[]> = { ...(current.k6RunHistoryByRequest ?? {}) }
-    const metrics = extractGlobalMetricsFromSummary(input.summaryJson)
+    const perRows =
+      input.scope === 'collection' ? extractPerRequestMetricsFromSummary(input.summaryJson) : []
     for (const requestId of input.requestIds) {
       const list = hist[requestId] ?? []
+      const scoped =
+        input.scope === 'collection' && perRows.length
+          ? metricsForRequestId(perRows, requestId)
+          : null
+      const metrics = scoped ?? extractGlobalMetricsFromSummary(input.summaryJson)
       const entry: K6RunHistoryEntry = {
         id: buildId('rh'),
         runId: input.runId,
@@ -380,6 +389,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const hist: Record<string, K6RunHistoryEntry[]> = { ...(current.k6RunHistoryByRequest ?? {}) }
     const list = hist[requestId] ?? []
     hist[requestId] = list.filter((e) => e.id !== entryId)
+    const next: AppData = { ...current, k6RunHistoryByRequest: hist }
+    persistData(next)
+    set({ data: next })
+  },
+
+  deleteK6RunHistoryEntriesByRunId: (runId) => {
+    const current = get().data
+    if (!current) return
+    const hist: Record<string, K6RunHistoryEntry[]> = { ...(current.k6RunHistoryByRequest ?? {}) }
+    for (const key of Object.keys(hist)) {
+      hist[key] = hist[key].filter((e) => e.runId !== runId)
+    }
     const next: AppData = { ...current, k6RunHistoryByRequest: hist }
     persistData(next)
     set({ data: next })

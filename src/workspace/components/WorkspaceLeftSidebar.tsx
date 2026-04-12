@@ -15,6 +15,9 @@ type Props = {
   onOpenImportCurl?: () => void
   onOpenImportCollection?: () => void
   onExportCollectionJson?: (collectionId: string) => void
+  onDeleteRequest?: (collectionId: string, requestId: string) => void
+  onDeleteAllCollections?: () => void
+  onMoveRequest?: (collectionId: string, requestId: string, direction: 'up' | 'down') => void
 }
 
 export function WorkspaceLeftSidebar(props: Props) {
@@ -59,13 +62,20 @@ export function WorkspaceLeftSidebar(props: Props) {
   return (
     <aside className="ws-left">
       <div className="ws-left-head">
-        <div>
+        <div className="ws-left-head-text">
           <div className="ws-title">Collections</div>
-          <div className="muted">Project: {props.project.name}</div>
+          <div className="muted ws-left-sub">Project: {props.project.name}</div>
         </div>
-        <button type="button" className="ws-btn ghost" onClick={props.onCreateCollection}>
-          + Collection
-        </button>
+        <div className="ws-left-head-actions">
+          <button type="button" className="ws-btn ws-btn--sm ghost" onClick={props.onCreateCollection}>
+            + Collection
+          </button>
+          {props.onDeleteAllCollections ? (
+            <button type="button" className="ws-link-danger" title="Remove all collections and start with one empty Default" onClick={props.onDeleteAllCollections}>
+              Reset all…
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="ws-left-tools">
         {props.onOpenImportCurl ? (
@@ -102,17 +112,12 @@ export function WorkspaceLeftSidebar(props: Props) {
                   {col.name}
                 </button>
               )}
-              <button
-                type="button"
-                className="ws-btn ghost ws-tree-send"
-                title="Rename collection"
-                onClick={(e) => startEditCollection(col, e)}
-              >
+              <button type="button" className="ws-icon-btn ws-icon-btn--ghost" title="Rename collection" onClick={(e) => startEditCollection(col, e)}>
                 ✎
               </button>
               <button
                 type="button"
-                className="ws-btn ghost ws-tree-send"
+                className="ws-icon-btn ws-icon-btn--accent"
                 title="Send all requests in this collection (HTTP)"
                 onClick={(e) => {
                   e.stopPropagation()
@@ -124,7 +129,7 @@ export function WorkspaceLeftSidebar(props: Props) {
               {props.onExportCollectionJson ? (
                 <button
                   type="button"
-                  className="ws-btn ghost ws-tree-send"
+                  className="ws-icon-btn ws-icon-btn--ghost"
                   title="Export collection as PerfMix JSON"
                   onClick={(e) => {
                     e.stopPropagation()
@@ -137,11 +142,42 @@ export function WorkspaceLeftSidebar(props: Props) {
             </div>
             {col.id === activeCollection?.id ? (
               <div className="ws-tree-children">
-                {col.requests.map((req: RequestDefinition) => {
+                <p className="ws-tree-order-hint muted">Order: &quot;Send all&quot; and sequential k6 follow this list. Arrows move rows.</p>
+                {col.requests.map((req: RequestDefinition, reqIndex: number) => {
                   const rk = `${col.id}:${req.id}`
                   const editing = editingRequestKey === rk
+                  const canUp = reqIndex > 0
+                  const canDown = reqIndex < col.requests.length - 1
                   return (
-                    <div key={req.id} className="ws-tree-row" style={{ marginLeft: 4 }}>
+                    <div key={req.id} className="ws-tree-row ws-tree-request-row">
+                      {props.onMoveRequest && !editing ? (
+                        <span className="ws-tree-reorder" aria-label="Reorder request">
+                          <button
+                            type="button"
+                            className="ws-icon-btn"
+                            disabled={!canUp}
+                            title="Move up"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              props.onMoveRequest!(col.id, req.id, 'up')
+                            }}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            className="ws-icon-btn"
+                            disabled={!canDown}
+                            title="Move down"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              props.onMoveRequest!(col.id, req.id, 'down')
+                            }}
+                          >
+                            ↓
+                          </button>
+                        </span>
+                      ) : null}
                       {editing ? (
                         <input
                           className="ws-tree-rename"
@@ -166,14 +202,22 @@ export function WorkspaceLeftSidebar(props: Props) {
                           <span className="ws-req-name">{req.name}</span>
                         </button>
                       )}
-                      <button
-                        type="button"
-                        className="ws-btn ghost ws-tree-send"
-                        title="Rename request"
-                        onClick={(e) => startEditRequest(col.id, req, e)}
-                      >
+                      <button type="button" className="ws-icon-btn ws-icon-btn--ghost" title="Rename request" onClick={(e) => startEditRequest(col.id, req, e)}>
                         ✎
                       </button>
+                      {props.onDeleteRequest ? (
+                        <button
+                          type="button"
+                          className="ws-icon-btn ws-icon-btn--danger"
+                          title="Remove request"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            props.onDeleteRequest!(col.id, req.id)
+                          }}
+                        >
+                          ✕
+                        </button>
+                      ) : null}
                     </div>
                   )
                 })}

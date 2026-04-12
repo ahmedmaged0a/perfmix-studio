@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { RequestDefinition } from '../../models/types'
 import { tauriReadRunReportHtml } from '../../desktop/tauriBridge'
+import { extractAggregateMetricsExcludingReport } from '../../k6/summaryPerRequest'
 
 type Props = {
   summaryJson: string | null
@@ -8,6 +9,8 @@ type Props = {
   reportHtmlPath: string | null
   request: RequestDefinition | null
   embedded?: boolean
+  /** Collection runs: KPIs use tagged metrics and omit perfmix_report=0 from aggregate. */
+  aggregateKpisExcludeHiddenRequests?: boolean
 }
 
 type Summary = Record<string, unknown>
@@ -51,11 +54,16 @@ export function WorkspaceReportPanel(props: Props) {
 
   const chartRef = useRef<HTMLDivElement | null>(null)
 
-  const httpAvg = metricAuto(summary, 'http_req_duration', 'avg')
-  const httpP95 = metricAuto(summary, 'http_req_duration', 'p(95)')
+  const adjusted = useMemo(() => {
+    if (!props.aggregateKpisExcludeHiddenRequests || !props.summaryJson) return null
+    return extractAggregateMetricsExcludingReport(props.summaryJson)
+  }, [props.aggregateKpisExcludeHiddenRequests, props.summaryJson])
+
+  const httpAvg = adjusted?.avgMs ?? metricAuto(summary, 'http_req_duration', 'avg')
+  const httpP95 = adjusted?.p95Ms ?? metricAuto(summary, 'http_req_duration', 'p(95)')
   const httpP99 = metricAuto(summary, 'http_req_duration', 'p(99)')
-  const failRate = metricAuto(summary, 'http_req_failed', 'rate')
-  const rps = metricAuto(summary, 'http_reqs', 'rate')
+  const failRate = adjusted?.errorRate ?? metricAuto(summary, 'http_req_failed', 'rate')
+  const rps = adjusted?.rps ?? metricAuto(summary, 'http_reqs', 'rate')
   const iterations = metricAuto(summary, 'iterations', 'count')
   const checksPasses = metricAuto(summary, 'checks', 'passes')
   const checksFails = metricAuto(summary, 'checks', 'fails')

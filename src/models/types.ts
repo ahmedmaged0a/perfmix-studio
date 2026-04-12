@@ -19,6 +19,8 @@ export type ApiRequestItem = {
   body: string
   testCases: RequestTestCase[]
   assertions?: RequestAssertion[]
+  /** When true, k6 tags perfmix_report=0; aggregate reporting ignores these requests. */
+  excludeFromAggregateReport?: boolean
 }
 
 export type PerfCriteria = {
@@ -166,6 +168,11 @@ export type RequestDefinition = {
   preRequestScript?: string
   /** In-app Send only; runs after HTTP. */
   postRequestScript?: string
+  /**
+   * Collection k6 still runs this request, but per-request / aggregate charts omit it
+   * (e.g. login/logout surrounding measured APIs).
+   */
+  excludeFromAggregateReport?: boolean
 }
 
 export type Collection = {
@@ -175,6 +182,12 @@ export type Collection = {
   /** Collection-scoped {{var}}; overridden by active environment for same key */
   variables?: Record<string, string>
   docs?: string
+  /** Whole-collection k6: parallel scenarios vs one sequential journey. */
+  k6CollectionExecution?: 'parallel' | 'sequential'
+  /** Sequential journey load (ignored for parallel mode). */
+  k6LoadVus?: number
+  k6LoadDuration?: string
+  k6LoadRampUp?: string
 }
 
 export type CorrelationRule = {

@@ -1,6 +1,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/appStore'
 import type {
+  Collection,
   CorrelationRule,
   CriteriaToggleKey,
   HttpBatchItem,
@@ -14,10 +15,12 @@ import type {
   RuntimeDiagnostics,
 } from '../models/types'
 import { extractGlobalMetricsFromSummary } from '../k6/summaryMetrics'
+import { extractAggregateMetricsExcludingReport } from '../k6/summaryPerRequest'
 import { buildWorkspaceCollectionK6Script, buildWorkspaceK6Script } from './k6/workspaceGenerator'
 import { buildPerfMixCollectionExportJson } from './collectionIo'
 import { collectionToCurlSh, requestToCurl } from './curlExport'
 import { ImportCollectionModal, ImportCurlModal } from './components/WorkspaceImportDialogs'
+import { WorkspaceConfirmModal } from './components/WorkspaceConfirmModal'
 import { buildTemplateContextFromAppState, runSingleRequestHttpPipeline } from './workspaceHttpPipeline'
 import { WorkspaceTopBar } from './components/WorkspaceTopBar'
 import { WorkspaceLeftSidebar } from './components/WorkspaceLeftSidebar'
@@ -51,6 +54,7 @@ export function WorkspaceApp(props: Props) {
   const stopK6Run = useAppStore((state) => state.stopK6Run)
   const appendK6RunHistory = useAppStore((state) => state.appendK6RunHistory)
   const deleteK6RunHistoryEntry = useAppStore((state) => state.deleteK6RunHistoryEntry)
+  const deleteK6RunHistoryEntriesByRunId = useAppStore((state) => state.deleteK6RunHistoryEntriesByRunId)
   const setK6VerboseLogs = useAppStore((state) => state.setK6VerboseLogs)
   const k6VerboseLogs = useAppStore((state) => state.k6VerboseLogs)
   const lastRunStatus = useAppStore((state) => state.lastRunStatus)
@@ -76,6 +80,7 @@ export function WorkspaceApp(props: Props) {
   const [httpClientLogs, setHttpClientLogs] = useState<string[]>([])
   const [importCurlOpen, setImportCurlOpen] = useState(false)
   const [importCollectionOpen, setImportCollectionOpen] = useState(false)
+  const [removeRequestTarget, setRemoveRequestTarget] = useState<{ collectionId: string; requestId: string } | null>(null)
   const [k6Output, setK6Output] = useState<{ at: string; runId: string | null; status: string; metrics: K6RunHistoryMetrics } | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const toastHideTimer = useRef<number | null>(null)
@@ -175,19 +180,25 @@ export function WorkspaceApp(props: Props) {
       assertions: request.assertions,
       preRequestScript: request.preRequestScript,
       postRequestScript: request.postRequestScript,
+      excludeFromAggregateReport: request.excludeFromAggregateReport,
     })
   }, [request])
 
   const collectionFingerprint = useMemo(() => {
     if (!collection) return ''
-    return JSON.stringify(
-      collection.requests.map((r) => ({
+    return JSON.stringify({
+      k6CollectionExecution: collection.k6CollectionExecution ?? 'parallel',
+      k6LoadVus: collection.k6LoadVus,
+      k6LoadDuration: collection.k6LoadDuration,
+      k6LoadRampUp: collection.k6LoadRampUp,
+      requests: collection.requests.map((r) => ({
         id: r.id,
         method: r.method,
         url: r.url,
         query: r.query,
         headers: r.headers,
         bodyText: r.bodyText,
+        excludeFromAggregateReport: r.excludeFromAggregateReport,
         testCases: r.testCases.map((tc) => ({
           id: tc.id,
           name: tc.name,
@@ -203,7 +214,7 @@ export function WorkspaceApp(props: Props) {
         preRequestScript: r.preRequestScript,
         postRequestScript: r.postRequestScript,
       })),
-    )
+    })
   }, [collection])
 
   const projectVarFingerprint = useMemo(() => JSON.stringify(project?.variables ?? {}), [project])
@@ -289,6 +300,68 @@ export function WorkspaceApp(props: Props) {
       col.requests.push(req)
     })
     setActiveRequestId(req.id)
+  }
+
+  const openRemoveRequestConfirm = (collectionId: string, requestId: string) => {
+    setRemoveRequestTarget({ collectionId, requestId })
+  }
+
+  const removeRequestDetails = useMemo(() => {
+    if (!removeRequestTarget || !project) return null
+    const col = project.collections.find((c) => c.id === removeRequestTarget.collectionId)
+    const req = col?.requests.find((r) => r.id === removeRequestTarget.requestId)
+    if (!col || !req) return null
+    return { collectionName: col.name, method: req.method, name: req.name }
+  }, [removeRequestTarget, project])
+
+  const confirmRemoveRequest = () => {
+    if (!removeRequestTarget) return
+    const { collectionId, requestId } = removeRequestTarget
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collectionId)
+      if (!col) return
+      col.requests = col.requests.filter((r) => r.id !== requestId)
+    })
+    if (activeRequestId === requestId) setActiveRequestId(null)
+  }
+
+  const moveRequest = (collectionId: string, requestId: string, direction: 'up' | 'down') => {
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collectionId)
+      if (!col) return
+      const idx = col.requests.findIndex((r) => r.id === requestId)
+      if (idx === -1) return
+      const j = direction === 'up' ? idx - 1 : idx + 1
+      if (j < 0 || j >= col.requests.length) return
+      const list = col.requests
+      const tmp = list[idx]
+      list[idx] = list[j]
+      list[j] = tmp
+    })
+  }
+
+  const deleteAllCollections = () => {
+    if (!window.confirm('Delete all collections and replace with one empty Default collection?')) return
+    const newCol = { id: buildId('col'), name: 'Default', requests: [] as RequestDefinition[], variables: {} }
+    updateProject((draft) => {
+      draft.collections = [newCol]
+    })
+    setActiveCollectionId(newCol.id)
+    setActiveRequestId(null)
+  }
+
+  const patchActiveCollectionK6 = (
+    patch: Partial<Pick<Collection, 'k6CollectionExecution' | 'k6LoadVus' | 'k6LoadDuration' | 'k6LoadRampUp'>>,
+  ) => {
+    if (!collection) return
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      if (!col) return
+      if (patch.k6CollectionExecution !== undefined) col.k6CollectionExecution = patch.k6CollectionExecution
+      if (patch.k6LoadVus !== undefined) col.k6LoadVus = patch.k6LoadVus
+      if (patch.k6LoadDuration !== undefined) col.k6LoadDuration = patch.k6LoadDuration
+      if (patch.k6LoadRampUp !== undefined) col.k6LoadRampUp = patch.k6LoadRampUp
+    })
   }
 
   const updateRequest = (patch: Partial<RequestDefinition>) => {
@@ -590,7 +663,10 @@ export function WorkspaceApp(props: Props) {
     setGeneratedScript(generatedScript)
     const result = await executeK6Run()
     const st = useAppStore.getState()
-    const metrics = extractGlobalMetricsFromSummary(st.lastSummaryJson)
+    const metrics =
+      exportTarget === 'collection'
+        ? extractAggregateMetricsExcludingReport(st.lastSummaryJson)
+        : extractGlobalMetricsFromSummary(st.lastSummaryJson)
     setK6Output({
       at: new Date().toISOString(),
       runId: result.runId,
@@ -612,8 +688,6 @@ export function WorkspaceApp(props: Props) {
       })
     }
   }
-
-  const runHistory = request ? data?.k6RunHistoryByRequest?.[request.id] ?? [] : []
 
   if (!data || !project) {
     return (
@@ -691,6 +765,12 @@ export function WorkspaceApp(props: Props) {
         onLogout={props.onLogout}
         runPurpose={runPurpose}
         onRunPurposeChange={setRunPurpose}
+        collectionExecution={collection?.k6CollectionExecution ?? 'parallel'}
+        onCollectionExecutionChange={(v) => patchActiveCollectionK6({ k6CollectionExecution: v })}
+        collectionLoadVus={collection?.k6LoadVus ?? 5}
+        collectionLoadDuration={collection?.k6LoadDuration ?? '1m'}
+        collectionLoadRampUp={collection?.k6LoadRampUp ?? '30s'}
+        onCollectionLoadChange={(next) => patchActiveCollectionK6(next)}
       />
 
       <div className="ws-body">
@@ -720,6 +800,9 @@ export function WorkspaceApp(props: Props) {
             URL.revokeObjectURL(url)
             showToast('Exported collection JSON')
           }}
+          onDeleteRequest={openRemoveRequestConfirm}
+          onDeleteAllCollections={deleteAllCollections}
+          onMoveRequest={moveRequest}
         />
 
         <section className="ws-center-wrap">
@@ -764,11 +847,15 @@ export function WorkspaceApp(props: Props) {
 
             {mainTab === 'reporting' ? (
               <WorkspaceReportingPanel
+                mode={exportTarget === 'collection' ? 'collection' : 'request'}
                 request={request}
-                history={runHistory}
-                onDeleteEntry={(entryId) => {
-                  if (!request) return
-                  deleteK6RunHistoryEntry(request.id, entryId)
+                collection={collection}
+                data={data}
+                onDeleteEntry={(requestId, entryId) => {
+                  deleteK6RunHistoryEntry(requestId, entryId)
+                }}
+                onDeleteRunById={(runId) => {
+                  deleteK6RunHistoryEntriesByRunId(runId)
                 }}
               />
             ) : null}
@@ -915,6 +1002,28 @@ export function WorkspaceApp(props: Props) {
           showToast('Imported collection')
         }}
       />
+
+      <WorkspaceConfirmModal
+        open={!!removeRequestTarget}
+        titleId="ws-remove-request-title"
+        title="Remove this request?"
+        confirmLabel="Remove request"
+        danger
+        onClose={() => setRemoveRequestTarget(null)}
+        onConfirm={confirmRemoveRequest}
+      >
+        {removeRequestDetails ? (
+          <p style={{ margin: 0, lineHeight: 1.5 }}>
+            <strong>{removeRequestDetails.method}</strong> {removeRequestDetails.name}
+            <span className="muted"> — collection &quot;{removeRequestDetails.collectionName}&quot;</span>
+          </p>
+        ) : (
+          <p style={{ margin: 0 }}>This request will be removed from the collection.</p>
+        )}
+        <p className="muted" style={{ margin: '10px 0 0' }}>
+          This cannot be undone.
+        </p>
+      </WorkspaceConfirmModal>
 
       {toastMessage ? <div className="ws-toast">{toastMessage}</div> : null}
     </div>

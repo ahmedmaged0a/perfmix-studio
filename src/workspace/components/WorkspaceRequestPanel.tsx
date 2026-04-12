@@ -106,6 +106,25 @@ export function WorkspaceRequestPanel(props: Props) {
           </button>
         </div>
 
+        <div className="ws-k6-report-banner">
+          <div className="ws-k6-report-banner-title">Collection k6 and reporting</div>
+          <p className="ws-k6-report-banner-lead">
+            For a <strong>whole-collection</strong> k6 run, every request is measured separately. Use the option below when this step is only setup or
+            teardown (for example login or logout) and you do not want it in combined averages on the Reporting tab.
+          </p>
+          <label className="ws-k6-report-banner-checkbox">
+            <input
+              type="checkbox"
+              checked={!!request.excludeFromAggregateReport}
+              onChange={(e) => props.onChangeRequest({ excludeFromAggregateReport: e.target.checked })}
+            />
+            <span>Exclude from aggregate charts and KPIs</span>
+          </label>
+          <p className="ws-k6-report-banner-hint muted">
+            The request still runs in the generated script and keeps its place in the list order above. Only summary rollups ignore it.
+          </p>
+        </div>
+
         <div className="ws-subtabs">
           <button type="button" className={requestSubTab === 'params' ? 'ws-subtab active' : 'ws-subtab'} onClick={() => setRequestSubTab('params')}>
             Params

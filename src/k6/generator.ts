@@ -19,6 +19,12 @@ type BuildK6Params = {
   projectVariables?: Record<string, string>
   dataCsv: string
   runPurpose: 'performance' | 'smoke'
+  /** Whole collection: parallel scenarios (default) vs one sequential journey. */
+  collectionExecution?: 'parallel' | 'sequential'
+  /** Used when mode is collection + sequential (performance). */
+  collectionLoadVus?: number
+  collectionLoadDuration?: string
+  collectionLoadRampUp?: string
 }
 
 function toScenarioKey(name: string) {
@@ -104,15 +110,27 @@ function buildAssertionChecks(assertions: RequestAssertion[] | undefined, reqNam
   return `{\n      ${checks.join(',\n      ')},\n    }`
 }
 
+function perfTagsLiteral(req: ApiRequestItem): string {
+  const report = req.excludeFromAggregateReport ? '0' : '1'
+  return JSON.stringify({ perfmix_request_id: req.id, perfmix_report: report })
+}
+
+function thinkTimeMsForRequest(req: ApiRequestItem, fallbackMs: number) {
+  const tc = req.testCases?.[0]
+  if (tc) return thinkTimeMsForK6(tc)
+  return fallbackMs
+}
+
 function buildHttpCall(req: ApiRequestItem, index: number) {
   const method = req.method.toLowerCase()
   const headersExpr = buildHeadersObject(req.headers)
   const checksExpr = buildAssertionChecks(req.assertions, req.name)
+  const tagsExpr = perfTagsLiteral(req)
 
   if (method === 'get' || method === 'head') {
     return `  // Step ${index + 1}: ${req.name}
   const url${index} = tmpl(${JSON.stringify(req.url)});
-  const res${index} = http.${method}(url${index}, { headers: ${headersExpr} });
+  const res${index} = http.${method}(url${index}, { headers: ${headersExpr}, tags: ${tagsExpr} });
   check(res${index}, ${checksExpr});`
   }
 
@@ -120,7 +138,7 @@ function buildHttpCall(req: ApiRequestItem, index: number) {
   const bodyExpr = bodyRaw ? `tmpl(${JSON.stringify(bodyRaw)})` : 'null'
   return `  // Step ${index + 1}: ${req.name}
   const url${index} = tmpl(${JSON.stringify(req.url)});
-  const res${index} = http.${method}(url${index}, ${bodyExpr}, { headers: ${headersExpr} });
+  const res${index} = http.${method}(url${index}, ${bodyExpr}, { headers: ${headersExpr}, tags: ${tagsExpr} });
   check(res${index}, ${checksExpr});`
 }
 
@@ -274,6 +292,45 @@ function buildThresholdBlockForTestCases(
     .join(',\n    ')
 }
 
+function buildSequentialJourneyScenarioBlock(
+  journeyKey: string,
+  vu: number,
+  duration: string,
+  rampUp: string,
+  runPurpose: BuildK6Params['runPurpose'],
+) {
+  if (runPurpose === 'smoke') {
+    return `    ${journeyKey}: {
+      executor: 'shared-iterations',
+      vus: 1,
+      iterations: 1,
+      maxDuration: '5m',
+    },`
+  }
+  return `    ${journeyKey}: {
+      executor: 'ramping-vus',
+      startVUs: 0,
+      stages: [
+        { duration: ${JSON.stringify(rampUp)}, target: ${vu} },
+        { duration: ${JSON.stringify(duration)}, target: ${vu} },
+        { duration: '15s', target: 0 },
+      ],
+      gracefulRampDown: '15s',
+    },`
+}
+
+function buildSequentialDefaultBody(requests: ApiRequestItem[], fallbackThinkMs: number) {
+  const parts: string[] = ['  // Sequential collection journey: all requests in order per iteration.']
+  requests.forEach((req, i) => {
+    const idx = i + 1
+    const call = buildHttpCall(req, idx)
+    const sleepSec = thinkTimeMsForRequest(req, fallbackThinkMs) / 1000
+    parts.push(call)
+    parts.push(`  sleep(${sleepSec});`)
+  })
+  return parts.join('\n')
+}
+
 export function buildK6Script(params: BuildK6Params): string {
   const scenario = params.scenarios.find((item) => item.name === params.scenarioName)
   const scenarioKey = toScenarioKey(params.scenarioName || 'generated_scenario')
@@ -286,6 +343,14 @@ export function buildK6Script(params: BuildK6Params): string {
 
   const vus = scenario?.vus ?? params.vus
   const duration = scenario?.duration ?? params.duration
+
+  const isCollectionSequential =
+    params.mode === 'collection' && (params.collectionExecution ?? 'parallel') === 'sequential'
+
+  const journeyKey = toScenarioKey('collection_journey')
+  const loadVu = Math.max(1, Math.floor(params.collectionLoadVus ?? vus ?? 5))
+  const loadDuration = params.collectionLoadDuration ?? duration ?? '1m'
+  const loadRamp = params.collectionLoadRampUp ?? '30s'
 
   const envNormalized: Record<string, Record<string, string>> = {}
   for (const [envName, vars] of Object.entries(params.envVariables ?? {})) {
@@ -311,9 +376,56 @@ export function buildK6Script(params: BuildK6Params): string {
     .filter(Boolean)
   const dataJson = JSON.stringify(dataLines)
 
-  const scenarioBlock = buildScenarioEntries(requests, scenarioKey, vus, duration, params.runPurpose)
-  const thresholdsBlock = buildThresholdBlockForTestCases(requests, params.thresholds, params.runPurpose)
+  const scenarioBlock = isCollectionSequential
+    ? buildSequentialJourneyScenarioBlock(journeyKey, loadVu, loadDuration, loadRamp, params.runPurpose)
+    : buildScenarioEntries(requests, scenarioKey, vus, duration, params.runPurpose)
+
+  const thresholdsBlock = isCollectionSequential
+    ? params.runPurpose === 'smoke'
+      ? ''
+      : params.thresholds.length > 0
+        ? renderThresholds(params.thresholds)
+        : ''
+    : buildThresholdBlockForTestCases(requests, params.thresholds, params.runPurpose)
   const thresholdsInner = thresholdsBlock.trim()
+
+  const defaultFunctionBody = isCollectionSequential
+    ? buildSequentialDefaultBody(requests, scenario?.thinkTimeMs ?? 150)
+    : (() => {
+        const lines: string[] = []
+        lines.push('  // Dispatch by scenario (request test cases) or run all requests (default).')
+        const caseBranches: string[] = []
+        for (const req of requests) {
+          const cases = req.testCases?.length ? req.testCases : []
+          for (const tc of cases) {
+            const scenarioNameLiteral = `${req.id}_${tc.id}_${tc.name}`
+            const scenarioKeyBranch = toScenarioKey(scenarioNameLiteral)
+            const call = buildHttpCall(req, 1).replaceAll('\n', '\n  ')
+            caseBranches.push(
+              `  if (scenarioName === ${JSON.stringify(scenarioKeyBranch)}) {\n  ${call}\n    sleep(${thinkTimeMsForK6(tc)} / 1000);\n    return;\n  }`,
+            )
+          }
+          if (!cases.length) {
+            const defaultKey = toScenarioKey(`${req.id}_default`)
+            const call = buildHttpCall(req, 1).replaceAll('\n', '\n  ')
+            caseBranches.push(
+              `  if (scenarioName === ${JSON.stringify(defaultKey)}) {\n  ${call}\n    sleep(${scenario?.thinkTimeMs ?? 150} / 1000);\n    return;\n  }`,
+            )
+          }
+        }
+
+        lines.push(...caseBranches)
+
+        if (caseBranches.length) {
+          lines.push(`  // No matching scenario branch (unexpected).`)
+          lines.push(`  sleep(0.2);`)
+          return lines.join('\n')
+        }
+
+        lines.push(`${requestLines || '  sleep(1);'}`)
+        lines.push(`  sleep(${scenario?.thinkTimeMs ?? 150} / 1000);`)
+        return lines.join('\n')
+      })()
 
   return `/*
  * Generated by PerfMix Studio
@@ -393,41 +505,7 @@ export default function () {
   const tmpl = (s) => applyTemplate(s);
 
   const scenarioName = exec.scenario.name;
-${(() => {
-    const lines: string[] = []
-    lines.push('  // Dispatch by scenario (request test cases) or run all requests (default).')
-    const caseBranches: string[] = []
-    for (const req of requests) {
-      const cases = req.testCases?.length ? req.testCases : []
-      for (const tc of cases) {
-        const scenarioNameLiteral = `${req.id}_${tc.id}_${tc.name}`
-        const scenarioKey = toScenarioKey(scenarioNameLiteral)
-        const call = buildHttpCall(req, 1).replaceAll('\n', '\n  ')
-        caseBranches.push(
-          `  if (scenarioName === ${JSON.stringify(scenarioKey)}) {\n  ${call}\n    sleep(${thinkTimeMsForK6(tc)} / 1000);\n    return;\n  }`,
-        )
-      }
-      if (!cases.length) {
-        const defaultKey = toScenarioKey(`${req.id}_default`)
-        const call = buildHttpCall(req, 1).replaceAll('\n', '\n  ')
-        caseBranches.push(
-          `  if (scenarioName === ${JSON.stringify(defaultKey)}) {\n  ${call}\n    sleep(${scenario?.thinkTimeMs ?? 150} / 1000);\n    return;\n  }`,
-        )
-      }
-    }
-
-    lines.push(...caseBranches)
-
-    if (caseBranches.length) {
-      lines.push(`  // No matching scenario branch (unexpected).`)
-      lines.push(`  sleep(0.2);`)
-      return lines.join('\n')
-    }
-
-    lines.push(`${requestLines || '  sleep(1);'}`)
-    lines.push(`  sleep(${scenario?.thinkTimeMs ?? 150} / 1000);`)
-    return lines.join('\n')
-  })()}
+${defaultFunctionBody}
 }
 `
 }

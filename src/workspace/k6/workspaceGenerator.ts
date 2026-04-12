@@ -39,6 +39,7 @@ function mapRequestToLegacy(collectionName: string, request: RequestDefinition) 
     body: request.bodyText,
     testCases: request.testCases,
     assertions: request.assertions,
+    excludeFromAggregateReport: request.excludeFromAggregateReport,
   }
 }
 
@@ -85,5 +86,9 @@ export function buildWorkspaceCollectionK6Script(params: CollectionParams) {
     projectVariables: params.project.variables ?? {},
     dataCsv: params.csvRows.join('\n'),
     runPurpose: params.runPurpose,
+    collectionExecution: params.collection.k6CollectionExecution ?? 'parallel',
+    collectionLoadVus: params.collection.k6LoadVus,
+    collectionLoadDuration: params.collection.k6LoadDuration,
+    collectionLoadRampUp: params.collection.k6LoadRampUp,
   })
 }
