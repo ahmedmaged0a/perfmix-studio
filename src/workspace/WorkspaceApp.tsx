@@ -1,0 +1,922 @@
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useAppStore } from '../store/appStore'
+import type {
+  CorrelationRule,
+  CriteriaToggleKey,
+  HttpBatchItem,
+  HttpOutputPayload,
+  K6RunHistoryMetrics,
+  PerfCriteria,
+  PerfCriteriaPatch,
+  Project,
+  RequestDefinition,
+  RequestTestCase,
+  RuntimeDiagnostics,
+} from '../models/types'
+import { extractGlobalMetricsFromSummary } from '../k6/summaryMetrics'
+import { buildWorkspaceCollectionK6Script, buildWorkspaceK6Script } from './k6/workspaceGenerator'
+import { buildPerfMixCollectionExportJson } from './collectionIo'
+import { collectionToCurlSh, requestToCurl } from './curlExport'
+import { ImportCollectionModal, ImportCurlModal } from './components/WorkspaceImportDialogs'
+import { buildTemplateContextFromAppState, runSingleRequestHttpPipeline } from './workspaceHttpPipeline'
+import { WorkspaceTopBar } from './components/WorkspaceTopBar'
+import { WorkspaceLeftSidebar } from './components/WorkspaceLeftSidebar'
+import { WorkspaceRequestPanel } from './components/WorkspaceRequestPanel'
+import { WorkspaceRightPanel } from './components/WorkspaceRightPanel'
+import { WorkspaceBottomPanel } from './components/WorkspaceBottomPanel'
+import { WorkspaceScriptViewer } from './components/WorkspaceScriptViewer'
+import { WorkspaceAssistantPanel } from './components/WorkspaceAssistantPanel'
+import { WorkspaceReportingPanel } from './components/WorkspaceReportingPanel'
+import { WorkspaceDocsPanel } from './components/WorkspaceDocsPanel'
+
+function buildId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+}
+
+type MainTab = 'builder' | 'script' | 'assistant' | 'reporting' | 'docs'
+type BottomTab = 'output' | 'logs'
+
+type Props = {
+  username: string | null
+  diagnostics: RuntimeDiagnostics | null
+  onLoadDiagnostics: () => void
+  onLogout: () => void
+}
+
+export function WorkspaceApp(props: Props) {
+  const data = useAppStore((state) => state.data)
+  const replaceWorkspaceData = useAppStore((state) => state.replaceWorkspaceData)
+  const setGeneratedScript = useAppStore((state) => state.setGeneratedScript)
+  const executeK6Run = useAppStore((state) => state.executeK6Run)
+  const stopK6Run = useAppStore((state) => state.stopK6Run)
+  const appendK6RunHistory = useAppStore((state) => state.appendK6RunHistory)
+  const deleteK6RunHistoryEntry = useAppStore((state) => state.deleteK6RunHistoryEntry)
+  const setK6VerboseLogs = useAppStore((state) => state.setK6VerboseLogs)
+  const k6VerboseLogs = useAppStore((state) => state.k6VerboseLogs)
+  const lastRunStatus = useAppStore((state) => state.lastRunStatus)
+  const lastRunId = useAppStore((state) => state.lastRunId)
+  const runLogs = useAppStore((state) => state.runLogs)
+  const clearRunLogs = useAppStore((state) => state.clearRunLogs)
+
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null)
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null)
+  const [activeTcId, setActiveTcId] = useState<string | null>(null)
+  const [mainTab, setMainTab] = useState<MainTab>('builder')
+  const [bottomTab, setBottomTab] = useState<BottomTab>('output')
+  const [runPurpose, setRunPurpose] = useState<'performance' | 'smoke'>('performance')
+  const [exportTarget, setExportTarget] = useState<'request' | 'collection'>('request')
+  const [generatedScript, setLocalScript] = useState('')
+  const [bottomCollapsed, setBottomCollapsed] = useState(false)
+  const [bottomHeight, setBottomHeight] = useState<number | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const isDragging = useRef(false)
+  const [httpOutput, setHttpOutput] = useState<HttpOutputPayload | null>(null)
+  const [httpSending, setHttpSending] = useState(false)
+  const [httpClientLogs, setHttpClientLogs] = useState<string[]>([])
+  const [importCurlOpen, setImportCurlOpen] = useState(false)
+  const [importCollectionOpen, setImportCollectionOpen] = useState(false)
+  const [k6Output, setK6Output] = useState<{ at: string; runId: string | null; status: string; metrics: K6RunHistoryMetrics } | null>(null)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const toastHideTimer = useRef<number | null>(null)
+
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isDragging.current = true
+    const startY = e.clientY
+    const startH = bottomHeight ?? rootRef.current?.querySelector<HTMLElement>('.ws-bottom')?.offsetHeight ?? 200
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return
+      const delta = startY - ev.clientY
+      const next = Math.max(48, Math.min(startH + delta, window.innerHeight * 0.7))
+      setBottomHeight(next)
+      setBottomCollapsed(false)
+    }
+    const onUp = () => {
+      isDragging.current = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [bottomHeight])
+
+  const regenTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    void props.onLoadDiagnostics()
+    const timer = window.setInterval(() => {
+      void props.onLoadDiagnostics()
+    }, 60000)
+    return () => window.clearInterval(timer)
+  }, [props.onLoadDiagnostics])
+
+  useEffect(() => {
+    return () => {
+      if (toastHideTimer.current) window.clearTimeout(toastHideTimer.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!data?.activeProjectId) return
+    setActiveProjectId(data.activeProjectId)
+  }, [data?.activeProjectId])
+
+  const project = useMemo(() => {
+    if (!data?.projects?.length) return null
+    const id = activeProjectId ?? data.activeProjectId ?? data.projects[0]?.id
+    return data.projects.find((p) => p.id === id) ?? data.projects[0]
+  }, [data?.projects, activeProjectId, data?.activeProjectId])
+
+  const collection = useMemo(() => {
+    if (!project) return null
+    const id = activeCollectionId ?? project.collections[0]?.id ?? null
+    return project.collections.find((c) => c.id === id) ?? project.collections[0] ?? null
+  }, [project, activeCollectionId])
+
+  const request = useMemo(() => {
+    if (!collection) return null
+    const id = activeRequestId ?? collection.requests[0]?.id ?? null
+    return collection.requests.find((r) => r.id === id) ?? collection.requests[0] ?? null
+  }, [collection, activeRequestId])
+
+  const testCase = useMemo(() => {
+    if (!request) return null
+    if (!request.testCases.length) return null
+    const id = activeTcId ?? request.testCases[0]?.id
+    return request.testCases.find((t) => t.id === id) ?? request.testCases[0]
+  }, [request, activeTcId])
+
+  const requestFingerprint = useMemo(() => {
+    if (!request) return ''
+    return JSON.stringify({
+      id: request.id,
+      method: request.method,
+      url: request.url,
+      query: request.query,
+      headers: request.headers,
+      bodyText: request.bodyText,
+      testCases: request.testCases.map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        vus: tc.vus,
+        duration: tc.duration,
+        rampUp: tc.rampUp,
+        thinkTimeMs: tc.thinkTimeMs,
+        thinkTimeEnabled: tc.thinkTimeEnabled,
+        criteria: tc.criteria,
+        criteriaToggles: tc.criteriaToggles,
+      })),
+      assertions: request.assertions,
+      preRequestScript: request.preRequestScript,
+      postRequestScript: request.postRequestScript,
+    })
+  }, [request])
+
+  const collectionFingerprint = useMemo(() => {
+    if (!collection) return ''
+    return JSON.stringify(
+      collection.requests.map((r) => ({
+        id: r.id,
+        method: r.method,
+        url: r.url,
+        query: r.query,
+        headers: r.headers,
+        bodyText: r.bodyText,
+        testCases: r.testCases.map((tc) => ({
+          id: tc.id,
+          name: tc.name,
+          vus: tc.vus,
+          duration: tc.duration,
+          rampUp: tc.rampUp,
+          thinkTimeMs: tc.thinkTimeMs,
+          thinkTimeEnabled: tc.thinkTimeEnabled,
+          criteria: tc.criteria,
+          criteriaToggles: tc.criteriaToggles,
+        })),
+        assertions: r.assertions,
+        preRequestScript: r.preRequestScript,
+        postRequestScript: r.postRequestScript,
+      })),
+    )
+  }, [collection])
+
+  const projectVarFingerprint = useMemo(() => JSON.stringify(project?.variables ?? {}), [project])
+  const collectionVarFingerprint = useMemo(() => JSON.stringify(collection?.variables ?? {}), [collection])
+
+  const persistProjects = (nextProjects: Project[], nextActiveProjectId?: string) => {
+    if (!data) return
+    const next = {
+      ...data,
+      projects: nextProjects,
+      activeProjectId: nextActiveProjectId ?? project?.id ?? nextProjects[0]?.id ?? data.activeProjectId,
+      schemaVersion: 2,
+    }
+    replaceWorkspaceData(next)
+  }
+
+  const updateProject = (mutator: (draft: Project) => void) => {
+    if (!data || !project) return
+    const draft = structuredClone(project)
+    mutator(draft)
+    const nextProjects = (data.projects ?? []).map((p) => (p.id === draft.id ? draft : p))
+    persistProjects(nextProjects)
+  }
+
+  const renameCollection = (collectionId: string, name: string) => {
+    updateProject((draft) => {
+      const c = draft.collections.find((x) => x.id === collectionId)
+      if (c) c.name = name
+    })
+  }
+
+  const renameRequest = (collectionId: string, requestId: string, name: string) => {
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collectionId)
+      const r = col?.requests.find((x) => x.id === requestId)
+      if (r) r.name = name
+    })
+  }
+
+  const createProject = () => {
+    if (!data) return
+    const name = window.prompt('Project name?', 'New Project')?.trim()
+    if (!name) return
+    const p: Project = {
+      id: buildId('proj'),
+      name,
+      collections: [{ id: buildId('col'), name: 'Default', requests: [], variables: {} }],
+      correlationRules: [],
+      csvMappings: [],
+      csvRows: [],
+      variables: {},
+    }
+    persistProjects([...(data.projects ?? []), p], p.id)
+    setActiveProjectId(p.id)
+  }
+
+  const createCollection = () => {
+    if (!project) return
+    const name = window.prompt('Collection name?', 'New Collection')?.trim()
+    if (!name) return
+    updateProject((draft) => {
+      draft.collections.push({ id: buildId('col'), name, requests: [], variables: {} })
+    })
+    setActiveCollectionId(null)
+  }
+
+  const createRequest = () => {
+    if (!project || !collection) return
+    const req: RequestDefinition = {
+      id: buildId('req'),
+      name: 'New request',
+      method: 'GET',
+      url: 'https://example.com',
+      query: {},
+      headers: { 'Content-Type': 'application/json' },
+      bodyText: '',
+      testCases: [],
+      assertions: [],
+    }
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      if (!col) return
+      col.requests.push(req)
+    })
+    setActiveRequestId(req.id)
+  }
+
+  const updateRequest = (patch: Partial<RequestDefinition>) => {
+    if (!project || !collection || !request) return
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      const r = col?.requests.find((x) => x.id === request.id)
+      if (!r) return
+      Object.assign(r, patch)
+    })
+  }
+
+  const deleteTestCase = (tcId: string) => {
+    if (!project || !collection || !request) return
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      const r = col?.requests.find((x) => x.id === request.id)
+      if (!r) return
+      r.testCases = r.testCases.filter((t) => t.id !== tcId)
+    })
+    if (activeTcId === tcId) setActiveTcId(null)
+  }
+
+  const addTestCase = () => {
+    if (!project || !collection || !request) return
+    const tc: RequestTestCase = {
+      id: buildId('tc'),
+      name: `TC ${request.testCases.length + 1}`,
+      vus: 5,
+      duration: '10m',
+      rampUp: '30s',
+      thinkTimeMs: 150,
+      thinkTimeEnabled: true,
+      criteria: {
+        maxAvgMs: 800,
+        maxP95Ms: 1200,
+        maxErrorRate: 0.01,
+        minThroughputRps: 1,
+      },
+      criteriaToggles: {
+        maxAvgMs: true,
+        maxP95Ms: true,
+        maxP99Ms: false,
+        maxErrorRate: true,
+        minThroughputRps: true,
+      },
+    }
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      const r = col?.requests.find((x) => x.id === request.id)
+      if (!r) return
+      r.testCases.push(tc)
+    })
+    setActiveTcId(tc.id)
+  }
+
+  const updateTestCase = (tcId: string, patch: Partial<RequestTestCase>) => {
+    if (!project || !collection || !request) return
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      const r = col?.requests.find((x) => x.id === request.id)
+      const tc = r?.testCases.find((t) => t.id === tcId)
+      if (!tc) return
+      Object.assign(tc, patch)
+    })
+  }
+
+  const updateCriteria = (tcId: string, patch: PerfCriteriaPatch) => {
+    if (!project || !collection || !request) return
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      const r = col?.requests.find((x) => x.id === request.id)
+      const tc = r?.testCases.find((t) => t.id === tcId)
+      if (!tc) return
+      const cur: PerfCriteria = { ...(tc.criteria ?? {}) }
+      for (const [rawKey, v] of Object.entries(patch) as [keyof PerfCriteria, number | null | undefined][]) {
+        if (v === null) {
+          delete cur[rawKey]
+          if (rawKey === 'maxAvgMs') delete tc.maxAvgMs
+          if (rawKey === 'maxP95Ms') delete tc.maxP95Ms
+          if (rawKey === 'maxErrorRate') delete tc.maxErrorRate
+        } else if (typeof v === 'number' && Number.isFinite(v)) {
+          cur[rawKey] = v
+        } else if (typeof v === 'number' && Number.isNaN(v)) {
+          delete cur[rawKey]
+        }
+      }
+      tc.criteria = Object.keys(cur).length ? cur : undefined
+    })
+  }
+
+  const setCriterionMetricEnabled = (tcId: string, key: CriteriaToggleKey, enabled: boolean) => {
+    if (!project || !collection || !request) return
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      const r = col?.requests.find((x) => x.id === request.id)
+      const tc = r?.testCases.find((t) => t.id === tcId)
+      if (!tc) return
+      tc.criteriaToggles = { ...(tc.criteriaToggles ?? {}), [key]: enabled }
+      if (!enabled) {
+        const cur: PerfCriteria = { ...(tc.criteria ?? {}) }
+        delete cur[key]
+        tc.criteria = Object.keys(cur).length ? cur : undefined
+        if (key === 'maxAvgMs') delete tc.maxAvgMs
+        if (key === 'maxP95Ms') delete tc.maxP95Ms
+        if (key === 'maxErrorRate') delete tc.maxErrorRate
+      }
+    })
+  }
+
+  const setThinkTimeEnabled = (tcId: string, enabled: boolean) => {
+    if (!project || !collection || !request) return
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collection.id)
+      const r = col?.requests.find((x) => x.id === request.id)
+      const tc = r?.testCases.find((t) => t.id === tcId)
+      if (!tc) return
+      tc.thinkTimeEnabled = enabled
+    })
+  }
+
+  const addCorrelationRule = () => {
+    if (!project || !request) return
+    const rule: CorrelationRule = {
+      id: buildId('corr'),
+      variableName: 'auth_token',
+      fromRequestId: request.id,
+      jsonPath: '$.token',
+    }
+    updateProject((draft) => {
+      draft.correlationRules.push(rule)
+    })
+  }
+
+  const updateCorrelationRule = (id: string, patch: Partial<CorrelationRule>) => {
+    if (!project) return
+    updateProject((draft) => {
+      const r = draft.correlationRules.find((x) => x.id === id)
+      if (!r) return
+      Object.assign(r, patch)
+    })
+  }
+
+  const removeCorrelationRule = (id: string) => {
+    if (!project) return
+    updateProject((draft) => {
+      draft.correlationRules = draft.correlationRules.filter((r) => r.id !== id)
+    })
+  }
+
+  const doRegenerate = useCallback(() => {
+    if (!data || !project || !collection) return
+    const csvRows = data.csvRows ?? project.csvRows ?? []
+    let script = ''
+    if (exportTarget === 'collection') {
+      script = buildWorkspaceCollectionK6Script({
+        project,
+        collection,
+        activeEnvironment: data.environment,
+        envVariables: data.envVariables,
+        sharedVariables: data.sharedVariables,
+        csvRows,
+        runPurpose,
+      })
+    } else {
+      if (!request) return
+      script = buildWorkspaceK6Script({
+        project,
+        collection,
+        request,
+        activeEnvironment: data.environment,
+        envVariables: data.envVariables,
+        sharedVariables: data.sharedVariables,
+        csvRows,
+        runPurpose,
+      })
+    }
+    setLocalScript(script)
+    setGeneratedScript(script)
+  }, [data, project, collection, request, exportTarget, runPurpose])
+
+  const flushRegenerate = useCallback(() => {
+    if (regenTimer.current) {
+      window.clearTimeout(regenTimer.current)
+      regenTimer.current = null
+    }
+    doRegenerate()
+  }, [doRegenerate])
+
+  useEffect(() => {
+    if (regenTimer.current) window.clearTimeout(regenTimer.current)
+    regenTimer.current = window.setTimeout(() => {
+      doRegenerate()
+    }, 350)
+    return () => {
+      if (regenTimer.current) window.clearTimeout(regenTimer.current)
+    }
+  }, [
+    doRegenerate,
+    data?.environment,
+    exportTarget,
+    requestFingerprint,
+    collectionFingerprint,
+    projectVarFingerprint,
+    collectionVarFingerprint,
+  ])
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg)
+    if (toastHideTimer.current) window.clearTimeout(toastHideTimer.current)
+    toastHideTimer.current = window.setTimeout(() => {
+      setToastMessage(null)
+      toastHideTimer.current = null
+    }, 3200)
+  }, [])
+
+  const commitTestCasesAndNotify = useCallback(() => {
+    flushRegenerate()
+    showToast('Test cases saved — script updated')
+  }, [flushRegenerate, showToast])
+
+  const sendCollectionHttp = useCallback(
+    async (collectionId: string) => {
+      if (!data || !project) return
+      const col = project.collections.find((c) => c.id === collectionId)
+      if (!col?.requests.length) return
+      const at = new Date().toISOString()
+      const items: HttpBatchItem[] = []
+      const sharedCollectionVars = { ...(col.variables ?? {}) }
+      const sharedRuntimeEnv: Record<string, string> = {}
+      const sharedVariableOverrides: Record<string, string> = {}
+      const batchLogs: string[] = []
+      for (const req of col.requests) {
+        const templateCtx = buildTemplateContextFromAppState({
+          activeEnvironment: data.environment,
+          envVariables: data.envVariables,
+          sharedVariables: data.sharedVariables,
+          collectionVariables: sharedCollectionVars,
+          projectVariables: project.variables ?? {},
+        })
+        templateCtx.runtimeVarOverrides = sharedRuntimeEnv
+        templateCtx.variableOverrides = sharedVariableOverrides
+        const pipeline = await runSingleRequestHttpPipeline({ request: req, templateCtx })
+        batchLogs.push(`--- ${req.name} ---`, ...pipeline.scriptLogs)
+        items.push({
+          requestName: req.name,
+          method: pipeline.method,
+          url: pipeline.resolvedUrl,
+          result: pipeline.result,
+          assertionResults: pipeline.assertionResults,
+          scriptError: pipeline.scriptError,
+          scriptLogs: pipeline.scriptLogs.length ? pipeline.scriptLogs : undefined,
+        })
+      }
+      setHttpClientLogs((prev) => [...prev, ...batchLogs])
+      startTransition(() => {
+        setHttpOutput({ kind: 'batch', at, collectionName: col.name, items })
+        setBottomTab('output')
+      })
+    },
+    [data, project],
+  )
+
+  const sendActiveRequest = useCallback(async () => {
+    if (!data || !project || !collection || !request) return
+    setHttpSending(true)
+    try {
+      const templateCtx = buildTemplateContextFromAppState({
+        activeEnvironment: data.environment,
+        envVariables: data.envVariables,
+        sharedVariables: data.sharedVariables,
+        collectionVariables: { ...(collection.variables ?? {}) },
+        projectVariables: project.variables ?? {},
+      })
+      const pipeline = await runSingleRequestHttpPipeline({ request, templateCtx })
+      if (pipeline.scriptLogs.length) {
+        setHttpClientLogs((prev) => [...prev, `--- ${request.name} ---`, ...pipeline.scriptLogs])
+      }
+      startTransition(() => {
+        setHttpOutput({
+          kind: 'single',
+          method: pipeline.method,
+          url: pipeline.resolvedUrl,
+          at: new Date().toISOString(),
+          result: pipeline.result,
+          assertionResults: pipeline.assertionResults,
+          scriptError: pipeline.scriptError,
+          scriptLogs: pipeline.scriptLogs.length ? pipeline.scriptLogs : undefined,
+        })
+        setBottomTab('output')
+      })
+    } finally {
+      setHttpSending(false)
+    }
+  }, [data, project, collection, request])
+
+  const run = async () => {
+    props.onLoadDiagnostics()
+    setGeneratedScript(generatedScript)
+    const result = await executeK6Run()
+    const st = useAppStore.getState()
+    const metrics = extractGlobalMetricsFromSummary(st.lastSummaryJson)
+    setK6Output({
+      at: new Date().toISOString(),
+      runId: result.runId,
+      status: result.status,
+      metrics,
+    })
+    setBottomTab('output')
+
+    if (result.runId && (result.status === 'passed' || result.status === 'failed') && request && collection) {
+      const requestIds =
+        exportTarget === 'collection' ? collection.requests.map((r) => r.id) : [request.id]
+      appendK6RunHistory({
+        requestIds,
+        collectionId: collection.id,
+        scope: exportTarget === 'collection' ? 'collection' : 'request',
+        runId: result.runId,
+        status: result.status,
+        summaryJson: st.lastSummaryJson,
+      })
+    }
+  }
+
+  const runHistory = request ? data?.k6RunHistoryByRequest?.[request.id] ?? [] : []
+
+  if (!data || !project) {
+    return (
+      <div className="boot-screen">
+        <div>
+          <p>Loading workspace…</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="ws-root"
+      ref={rootRef}
+      style={bottomHeight != null && !bottomCollapsed ? { gridTemplateRows: `auto 1fr auto ${bottomHeight}px` } : undefined}
+    >
+      <WorkspaceTopBar
+        username={props.username}
+        projects={data.projects ?? []}
+        activeProjectId={project.id}
+        environment={data.environment}
+        onSelectProject={(id) => {
+          setActiveProjectId(id)
+          persistProjects(data.projects ?? [], id)
+        }}
+        onCreateProject={createProject}
+        onEnvironmentChange={(env) => {
+          replaceWorkspaceData({ ...data, environment: env })
+        }}
+        onRun={() => void run()}
+        exportTarget={exportTarget}
+        onExportTargetChange={setExportTarget}
+        onExport={() => {
+          if (!collection) return
+          if (exportTarget === 'request' && !request) return
+          flushRegenerate()
+          const csvRows = data.csvRows ?? project.csvRows ?? []
+          const freshScript =
+            exportTarget === 'collection'
+              ? buildWorkspaceCollectionK6Script({ project, collection, activeEnvironment: data.environment, envVariables: data.envVariables, sharedVariables: data.sharedVariables, csvRows, runPurpose })
+              : buildWorkspaceK6Script({ project, collection, request: request!, activeEnvironment: data.environment, envVariables: data.envVariables, sharedVariables: data.sharedVariables, csvRows, runPurpose })
+          if (!freshScript.trim()) {
+            window.alert('No script generated — check that you have a valid request URL.')
+            return
+          }
+          const blob = new Blob([freshScript], { type: 'text/javascript;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          const suffix =
+            exportTarget === 'collection' ? `${project.name}_${collection.name}` : `${project.name}_${request!.name}`
+          const dateStr = new Date().toISOString().slice(0, 10)
+          a.download = `${suffix.replace(/\s+/g, '_')}_${dateStr}.k6.js`
+          a.click()
+          URL.revokeObjectURL(url)
+          showToast('Downloaded to your default Downloads folder')
+        }}
+        onExportCurl={() => {
+          if (!collection) return
+          if (exportTarget === 'request' && !request) return
+          const text = exportTarget === 'collection' ? collectionToCurlSh(collection) : requestToCurl(request!)
+          const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          const suffix =
+            exportTarget === 'collection' ? `${project.name}_${collection.name}` : `${project.name}_${request!.name}`
+          const dateStr = new Date().toISOString().slice(0, 10)
+          a.download = `${suffix.replace(/\s+/g, '_')}_${dateStr}.curl.sh`
+          a.click()
+          URL.revokeObjectURL(url)
+          showToast('Exported cURL')
+        }}
+        onLogout={props.onLogout}
+        runPurpose={runPurpose}
+        onRunPurposeChange={setRunPurpose}
+      />
+
+      <div className="ws-body">
+        <WorkspaceLeftSidebar
+          project={project}
+          activeCollectionId={collection?.id ?? null}
+          activeRequestId={request?.id ?? null}
+          onSelectCollection={(id) => setActiveCollectionId(id)}
+          onSelectRequest={(id) => setActiveRequestId(id)}
+          onCreateCollection={createCollection}
+          onCreateRequest={createRequest}
+          onRenameCollection={renameCollection}
+          onRenameRequest={renameRequest}
+          onSendCollectionRequests={(id) => void sendCollectionHttp(id)}
+          onOpenImportCurl={() => setImportCurlOpen(true)}
+          onOpenImportCollection={() => setImportCollectionOpen(true)}
+          onExportCollectionJson={(collectionId) => {
+            const col = project.collections.find((c) => c.id === collectionId)
+            if (!col) return
+            const blob = new Blob([buildPerfMixCollectionExportJson(col)], { type: 'application/json;charset=utf-8' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            const dateStr = new Date().toISOString().slice(0, 10)
+            a.download = `${(col.name || 'collection').replace(/\s+/g, '_')}_${dateStr}.perfmix.json`
+            a.click()
+            URL.revokeObjectURL(url)
+            showToast('Exported collection JSON')
+          }}
+        />
+
+        <section className="ws-center-wrap">
+          <div className="ws-main-tabs">
+            <button type="button" className={mainTab === 'builder' ? 'ws-main-tab active' : 'ws-main-tab'} onClick={() => setMainTab('builder')}>
+              Request
+            </button>
+            <button type="button" className={mainTab === 'script' ? 'ws-main-tab active' : 'ws-main-tab'} onClick={() => setMainTab('script')}>
+              Generated k6
+            </button>
+            <button type="button" className={mainTab === 'reporting' ? 'ws-main-tab active' : 'ws-main-tab'} onClick={() => setMainTab('reporting')}>
+              Reporting
+            </button>
+            <button type="button" className={mainTab === 'assistant' ? 'ws-main-tab active' : 'ws-main-tab'} onClick={() => setMainTab('assistant')}>
+              AI assistant
+            </button>
+            <button type="button" className={mainTab === 'docs' ? 'ws-main-tab active' : 'ws-main-tab'} onClick={() => setMainTab('docs')}>
+              Docs
+            </button>
+          </div>
+
+          <div className="ws-main-body">
+            {mainTab === 'builder' ? (
+              <WorkspaceRequestPanel
+                request={request}
+                testCase={testCase}
+                onChangeRequest={updateRequest}
+                onAddTestCase={addTestCase}
+                onDeleteTestCase={deleteTestCase}
+                onSelectTestCase={(id) => setActiveTcId(id)}
+                onChangeTestCase={updateTestCase}
+                onChangeCriteria={updateCriteria}
+                onSetCriterionToggle={setCriterionMetricEnabled}
+                onSetThinkTimeEnabled={setThinkTimeEnabled}
+                onCommitTestCases={commitTestCasesAndNotify}
+                onSend={() => sendActiveRequest()}
+                sending={httpSending}
+              />
+            ) : null}
+
+            {mainTab === 'script' ? <WorkspaceScriptViewer script={generatedScript} /> : null}
+
+            {mainTab === 'reporting' ? (
+              <WorkspaceReportingPanel
+                request={request}
+                history={runHistory}
+                onDeleteEntry={(entryId) => {
+                  if (!request) return
+                  deleteK6RunHistoryEntry(request.id, entryId)
+                }}
+              />
+            ) : null}
+
+            {mainTab === 'assistant' ? <WorkspaceAssistantPanel /> : null}
+
+            {mainTab === 'docs' ? (
+              <WorkspaceDocsPanel
+                project={project}
+                collection={collection}
+                request={request}
+                onChangeProjectDocs={(docs) => updateProject((draft) => { draft.docs = docs })}
+                onChangeCollectionDocs={(docs) => {
+                  if (!collection) return
+                  updateProject((draft) => {
+                    const col = draft.collections.find((c) => c.id === collection.id)
+                    if (col) col.docs = docs
+                  })
+                }}
+                onChangeRequestDocs={(docs) => {
+                  if (!collection || !request) return
+                  updateProject((draft) => {
+                    const col = draft.collections.find((c) => c.id === collection.id)
+                    const req = col?.requests.find((r) => r.id === request.id)
+                    if (req) req.docs = docs
+                  })
+                }}
+              />
+            ) : null}
+          </div>
+        </section>
+
+        <WorkspaceRightPanel
+          activeEnvironment={data.environment}
+          collectionName={collection?.name ?? null}
+          collectionVariables={collection?.variables ?? {}}
+          projectVariables={project.variables ?? {}}
+          envVariables={data.envVariables}
+          sharedVariables={data.sharedVariables}
+          correlationRules={project.correlationRules}
+          requests={collection?.requests ?? []}
+          onChangeCollectionVars={(next) => {
+            if (!collection) return
+            updateProject((draft) => {
+              const col = draft.collections.find((c) => c.id === collection.id)
+              if (col) col.variables = next
+            })
+          }}
+          onChangeProjectVars={(next) => {
+            updateProject((draft) => {
+              draft.variables = next
+            })
+          }}
+          onChangeActiveEnvVars={(next) => {
+            replaceWorkspaceData({
+              ...data,
+              envVariables: { ...data.envVariables, [data.environment]: next },
+            })
+          }}
+          onChangeSharedVars={(next) => {
+            replaceWorkspaceData({ ...data, sharedVariables: next })
+          }}
+          onChangeEnvJson={(json) => {
+            try {
+              const parsed = JSON.parse(json) as Record<string, Record<string, string>>
+              replaceWorkspaceData({ ...data, envVariables: parsed })
+            } catch {
+              // ignore
+            }
+          }}
+          onChangeSharedJson={(json) => {
+            try {
+              const parsed = JSON.parse(json) as Record<string, string>
+              replaceWorkspaceData({ ...data, sharedVariables: parsed })
+            } catch {
+              // ignore
+            }
+          }}
+          onAddCorrelation={addCorrelationRule}
+          onChangeCorrelation={updateCorrelationRule}
+          onRemoveCorrelation={removeCorrelationRule}
+          onUploadCsv={(text) => {
+            const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+            updateProject((draft) => {
+              draft.csvRows = lines
+            })
+            replaceWorkspaceData({ ...data, dataCsv: lines.join('\n'), csvRows: lines })
+          }}
+        />
+      </div>
+
+      <div className="ws-resize-handle" onMouseDown={onDragStart} />
+
+      <WorkspaceBottomPanel
+        bottomTab={bottomTab}
+        onBottomTab={setBottomTab}
+        verbose={k6VerboseLogs}
+        onVerboseChange={setK6VerboseLogs}
+        diagnostics={props.diagnostics}
+        lastRunStatus={lastRunStatus}
+        lastRunId={lastRunId}
+        logs={runLogs}
+        httpClientLogs={httpClientLogs}
+        httpOutput={httpOutput}
+        k6Output={k6Output}
+        onStop={() => void stopK6Run()}
+        collapsed={bottomCollapsed}
+        onToggleCollapse={() => setBottomCollapsed((p) => !p)}
+        onClearLogs={() => {
+          clearRunLogs()
+          setHttpClientLogs([])
+        }}
+        onClearOutput={() => {
+          setHttpOutput(null)
+          setK6Output(null)
+          setHttpClientLogs([])
+        }}
+      />
+
+      <ImportCurlModal
+        open={importCurlOpen}
+        collections={project.collections}
+        defaultCollectionId={collection?.id ?? null}
+        onClose={() => setImportCurlOpen(false)}
+        onConfirm={(collectionId, newReq) => {
+          updateProject((draft) => {
+            const col = draft.collections.find((c) => c.id === collectionId)
+            if (col) col.requests.push(newReq)
+          })
+          setActiveCollectionId(collectionId)
+          setActiveRequestId(newReq.id)
+          showToast('Imported cURL request')
+        }}
+      />
+      <ImportCollectionModal
+        open={importCollectionOpen}
+        onClose={() => setImportCollectionOpen(false)}
+        onConfirm={(newCol) => {
+          updateProject((draft) => {
+            draft.collections.push(newCol)
+          })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast('Imported collection')
+        }}
+      />
+
+      {toastMessage ? <div className="ws-toast">{toastMessage}</div> : null}
+    </div>
+  )
+}
