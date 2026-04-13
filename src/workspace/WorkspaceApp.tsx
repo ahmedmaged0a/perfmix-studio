@@ -6,6 +6,7 @@ import type {
   CriteriaToggleKey,
   HttpBatchItem,
   HttpOutputPayload,
+  K6RunHistoryEntry,
   K6RunHistoryMetrics,
   PerfCriteria,
   PerfCriteriaPatch,
@@ -81,6 +82,7 @@ export function WorkspaceApp(props: Props) {
   const [importCurlOpen, setImportCurlOpen] = useState(false)
   const [importCollectionOpen, setImportCollectionOpen] = useState(false)
   const [removeRequestTarget, setRemoveRequestTarget] = useState<{ collectionId: string; requestId: string } | null>(null)
+  const [removeCollectionTarget, setRemoveCollectionTarget] = useState<string | null>(null)
   const [k6Output, setK6Output] = useState<{ at: string; runId: string | null; status: string; metrics: K6RunHistoryMetrics } | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const toastHideTimer = useRef<number | null>(null)
@@ -323,6 +325,37 @@ export function WorkspaceApp(props: Props) {
       col.requests = col.requests.filter((r) => r.id !== requestId)
     })
     if (activeRequestId === requestId) setActiveRequestId(null)
+  }
+
+  const removeCollectionDetails = useMemo(() => {
+    if (!removeCollectionTarget || !project) return null
+    const col = project.collections.find((c) => c.id === removeCollectionTarget)
+    if (!col) return null
+    return { name: col.name, requestCount: col.requests.length }
+  }, [removeCollectionTarget, project])
+
+  const confirmRemoveCollection = () => {
+    if (!data || !project || !removeCollectionTarget) return
+    if (project.collections.length < 2) return
+    const colId = removeCollectionTarget
+    const targetCol = project.collections.find((c) => c.id === colId)
+    if (!targetCol) return
+    const requestIds = targetCol.requests.map((r) => r.id)
+    const remaining = project.collections.filter((c) => c.id !== colId)
+    const nextProject = structuredClone(project)
+    nextProject.collections = nextProject.collections.filter((c) => c.id !== colId)
+    const nextProjects = (data.projects ?? []).map((p) => (p.id === nextProject.id ? nextProject : p))
+    const hist: Record<string, K6RunHistoryEntry[]> = { ...(data.k6RunHistoryByRequest ?? {}) }
+    for (const rid of requestIds) delete hist[rid]
+    replaceWorkspaceData({
+      ...data,
+      projects: nextProjects,
+      k6RunHistoryByRequest: hist,
+      schemaVersion: 2,
+    })
+    if (collection?.id === colId) {
+      setActiveCollectionId(remaining[0]?.id ?? null)
+    }
   }
 
   const moveRequest = (collectionId: string, requestId: string, direction: 'up' | 'down') => {
@@ -801,6 +834,7 @@ export function WorkspaceApp(props: Props) {
             showToast('Exported collection JSON')
           }}
           onDeleteRequest={openRemoveRequestConfirm}
+          onDeleteCollection={(id) => setRemoveCollectionTarget(id)}
           onDeleteAllCollections={deleteAllCollections}
           onMoveRequest={moveRequest}
         />
@@ -1019,6 +1053,28 @@ export function WorkspaceApp(props: Props) {
           </p>
         ) : (
           <p style={{ margin: 0 }}>This request will be removed from the collection.</p>
+        )}
+        <p className="muted" style={{ margin: '10px 0 0' }}>
+          This cannot be undone.
+        </p>
+      </WorkspaceConfirmModal>
+
+      <WorkspaceConfirmModal
+        open={!!removeCollectionTarget}
+        titleId="ws-remove-collection-title"
+        title="Delete this collection?"
+        confirmLabel="Delete collection"
+        danger
+        onClose={() => setRemoveCollectionTarget(null)}
+        onConfirm={confirmRemoveCollection}
+      >
+        {removeCollectionDetails ? (
+          <p style={{ margin: 0, lineHeight: 1.5 }}>
+            Collection &quot;{removeCollectionDetails.name}&quot; with{' '}
+            <strong>{removeCollectionDetails.requestCount}</strong> {removeCollectionDetails.requestCount === 1 ? 'request' : 'requests'} will be removed from this project.
+          </p>
+        ) : (
+          <p style={{ margin: 0 }}>This collection will be removed from the project.</p>
         )}
         <p className="muted" style={{ margin: '10px 0 0' }}>
           This cannot be undone.

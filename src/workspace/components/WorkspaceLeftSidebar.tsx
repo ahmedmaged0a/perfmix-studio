@@ -16,6 +16,7 @@ type Props = {
   onOpenImportCollection?: () => void
   onExportCollectionJson?: (collectionId: string) => void
   onDeleteRequest?: (collectionId: string, requestId: string) => void
+  onDeleteCollection?: (collectionId: string) => void
   onDeleteAllCollections?: () => void
   onMoveRequest?: (collectionId: string, requestId: string, direction: 'up' | 'down') => void
 }
@@ -58,6 +59,8 @@ export function WorkspaceLeftSidebar(props: Props) {
     if (name) props.onRenameRequest(colId, reqId, name)
     setEditingRequestKey(null)
   }
+
+  const canDeleteCollection = props.project.collections.length > 1 && !!props.onDeleteCollection
 
   return (
     <aside className="ws-left">
@@ -137,6 +140,19 @@ export function WorkspaceLeftSidebar(props: Props) {
                   }}
                 >
                   ⭳
+                </button>
+              ) : null}
+              {canDeleteCollection ? (
+                <button
+                  type="button"
+                  className="ws-icon-btn ws-icon-btn--danger"
+                  title="Delete collection"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    props.onDeleteCollection!(col.id)
+                  }}
+                >
+                  ✕
                 </button>
               ) : null}
             </div>
