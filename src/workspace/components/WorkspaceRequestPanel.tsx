@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { MousePointerClick, Plus, Trash2, Zap } from 'lucide-react'
 import { KeyValueTable } from '../../components/ui/KeyValueTable'
+import { AppSelect, MethodSelect } from '../../components/ui/AppSelect'
 import type {
   AssertionType,
+  BodyType,
   CriteriaToggleKey,
   PerfCriteriaPatch,
   RequestAssertion,
@@ -63,6 +65,18 @@ const ASSERTION_TYPES: { value: AssertionType; label: string }[] = [
   { value: 'header_value_equals', label: 'Header value equals' },
 ]
 
+const BODY_TYPES: { value: BodyType; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'form-data', label: 'Form Data' },
+  { value: 'x-www-form-urlencoded', label: 'x-www-form-urlencoded' },
+  { value: 'json', label: 'JSON' },
+  { value: 'xml', label: 'XML' },
+  { value: 'text', label: 'Text' },
+  { value: 'binary', label: 'Binary' },
+  { value: 'graphql', label: 'GraphQL' },
+  { value: 'msgpack', label: 'Msgpack' },
+]
+
 export function WorkspaceRequestPanel(props: Props) {
   const [requestSubTab, setRequestSubTab] = useState<
     'params' | 'headers' | 'body' | 'assertions' | 'preScript' | 'postScript'
@@ -70,7 +84,6 @@ export function WorkspaceRequestPanel(props: Props) {
 
   const request = props.request
 
-  const methodOptions = useMemo(() => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const, [])
 
   if (!request) {
     return (
@@ -94,17 +107,10 @@ export function WorkspaceRequestPanel(props: Props) {
     <section className="ws-center">
       <div className="ws-panel">
         <div className="ws-urlbar">
-          <select
-            className="ws-select"
+          <MethodSelect
             value={request.method}
-            onChange={(e) => props.onChangeRequest({ method: e.target.value as RequestDefinition['method'] })}
-          >
-            {methodOptions.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            onChange={(m) => props.onChangeRequest({ method: m })}
+          />
           <input
             className="ws-input grow"
             value={request.url}
@@ -182,29 +188,93 @@ export function WorkspaceRequestPanel(props: Props) {
 
         {requestSubTab === 'params' ? (
           <div className="ws-field">
-            <span className="muted">Query parameters</span>
-            <KeyValueTable value={request.query} onChange={(next) => props.onChangeRequest({ query: next })} />
+            <KeyValueTable
+              value={request.query}
+              onChange={(next) => props.onChangeRequest({ query: next })}
+              keyLabel="Key"
+              valueLabel="Value"
+              keyPlaceholder="field"
+              valuePlaceholder="value or {{variable}}"
+            />
           </div>
         ) : null}
 
         {requestSubTab === 'headers' ? (
           <div className="ws-field">
-            <span className="muted">Headers</span>
-            <KeyValueTable value={request.headers} onChange={(next) => props.onChangeRequest({ headers: next })} />
+            <KeyValueTable
+              value={request.headers}
+              onChange={(next) => props.onChangeRequest({ headers: next })}
+              keyLabel="Key"
+              valueLabel="Value"
+              keyPlaceholder="field"
+              valuePlaceholder="value or {{variable}}"
+            />
           </div>
         ) : null}
 
         {requestSubTab === 'body' ? (
-          <div className="ws-field">
-            <BodyMonacoEditor
-              key={request.id}
-              requestKey={request.id}
-              value={request.bodyText ?? ''}
-              onChange={(v) => props.onChangeRequest({ bodyText: v })}
-              contentType={
-                Object.entries(request.headers ?? {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1]
-              }
-            />
+          <div className="ws-body-tab">
+            {/* Body type selector */}
+            <div className="ws-body-type-bar">
+              {BODY_TYPES.map((bt) => (
+                <button
+                  key={bt.value}
+                  type="button"
+                  className={`ws-body-type-btn${(request.bodyType ?? 'none') === bt.value ? ' active' : ''}`}
+                  onClick={() => props.onChangeRequest({ bodyType: bt.value })}
+                >
+                  {bt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Body content based on selected type */}
+            {(request.bodyType ?? 'none') === 'none' ? (
+              <div className="ws-muted-panel ws-body-none">
+                No body — this request sends no payload.
+              </div>
+            ) : (request.bodyType === 'form-data' || request.bodyType === 'x-www-form-urlencoded') ? (
+              <div className="ws-field">
+                <KeyValueTable
+                  value={request.bodyFormData ?? {}}
+                  onChange={(next) => props.onChangeRequest({ bodyFormData: next })}
+                  keyLabel="Key"
+                  valueLabel="Value"
+                  keyPlaceholder="field"
+                  valuePlaceholder="value or {{variable}}"
+                />
+              </div>
+            ) : request.bodyType === 'binary' ? (
+              <div className="ws-body-binary">
+                <p className="muted" style={{ marginBottom: 8 }}>
+                  Select a file to send as the raw binary body.
+                </p>
+                <input
+                  type="file"
+                  className="ws-body-binary-input"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) props.onChangeRequest({ bodyText: file.name })
+                  }}
+                />
+                {request.bodyText ? (
+                  <p className="muted tiny" style={{ marginTop: 6 }}>
+                    Selected: <span className="mono">{request.bodyText}</span>
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <BodyMonacoEditor
+                key={`${request.id}-${request.bodyType}`}
+                requestKey={request.id}
+                bodyType={request.bodyType}
+                value={request.bodyText ?? ''}
+                onChange={(v) => props.onChangeRequest({ bodyText: v })}
+                contentType={
+                  Object.entries(request.headers ?? {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1]
+                }
+              />
+            )}
           </div>
         ) : null}
 
@@ -244,11 +314,11 @@ export function WorkspaceRequestPanel(props: Props) {
           <div className="ws-field">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span className="muted">Assertions run on Send and are generated as k6 checks in performance tests.</span>
-              <button type="button" className="ws-btn ghost" onClick={() => {
+              <button type="button" className="ws-btn ws-btn--outline-accent" onClick={() => {
                 const a: RequestAssertion = { id: `assert-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, type: 'status_code', enabled: true, target: '200' }
                 props.onChangeRequest({ assertions: [...(request.assertions ?? []), a] })
               }}>
-                <Plus size={13} style={{ marginRight: 4 }} />
+                <Plus size={13} strokeWidth={2.5} style={{ marginRight: 4 }} />
                 Assertion
               </button>
             </div>
@@ -284,16 +354,15 @@ export function WorkspaceRequestPanel(props: Props) {
                           />
                         </td>
                         <td>
-                          <select
-                            className="ws-select table"
+                          <AppSelect
                             value={a.type}
-                            onChange={(e) => {
-                              const next = (request.assertions ?? []).map((x) => x.id === a.id ? { ...x, type: e.target.value as AssertionType } : x)
+                            onChange={(v) => {
+                              const next = (request.assertions ?? []).map((x) => x.id === a.id ? { ...x, type: v as AssertionType } : x)
                               props.onChangeRequest({ assertions: next })
                             }}
-                          >
-                            {ASSERTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                          </select>
+                            options={ASSERTION_TYPES}
+                            className="ws-app-select--table"
+                          />
                         </td>
                         <td>
                           <input
@@ -344,12 +413,13 @@ export function WorkspaceRequestPanel(props: Props) {
             <div className="ws-title">Test cases</div>
             <div className="muted">Optional. Each row maps to a k6 scenario.</div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button type="button" className="ws-btn ws-btn--outline-accent" onClick={props.onAddTestCase}>
+              <Plus size={13} strokeWidth={2.5} style={{ marginRight: 4 }} />
+              Test case
+            </button>
             <button type="button" className="ws-btn primary" onClick={props.onCommitTestCases}>
               Save
-            </button>
-            <button type="button" className="ws-btn ghost" onClick={props.onAddTestCase}>
-              + Test case
             </button>
           </div>
         </div>
@@ -398,25 +468,18 @@ export function WorkspaceRequestPanel(props: Props) {
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="ws-td-stack">
-                          <select
-                            className="ws-select table"
+                          <AppSelect
                             value={durPreset ? tc.duration : 'custom'}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              if (v === 'custom') {
-                                props.onChangeTestCase(tc.id, { duration: '' })
-                                return
-                              }
+                            onChange={(v) => {
+                              if (v === 'custom') { props.onChangeTestCase(tc.id, { duration: '' }); return }
                               props.onChangeTestCase(tc.id, { duration: v })
                             }}
-                          >
-                            {DURATION_PRESETS.map((d) => (
-                              <option key={d} value={d}>
-                                {d}
-                              </option>
-                            ))}
-                            <option value="custom">Custom…</option>
-                          </select>
+                            options={[
+                              ...DURATION_PRESETS.map((d) => ({ value: d, label: d })),
+                              { value: 'custom', label: 'Custom…' },
+                            ]}
+                            className="ws-app-select--table"
+                          />
                           {!durPreset ? (
                             <input
                               className="ws-input table"
@@ -429,25 +492,18 @@ export function WorkspaceRequestPanel(props: Props) {
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="ws-td-stack">
-                          <select
-                            className="ws-select table"
+                          <AppSelect
                             value={rampPreset ? tc.rampUp : 'custom'}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              if (v === 'custom') {
-                                props.onChangeTestCase(tc.id, { rampUp: '' })
-                                return
-                              }
+                            onChange={(v) => {
+                              if (v === 'custom') { props.onChangeTestCase(tc.id, { rampUp: '' }); return }
                               props.onChangeTestCase(tc.id, { rampUp: v })
                             }}
-                          >
-                            {RAMP_PRESETS.map((d) => (
-                              <option key={d} value={d}>
-                                {d}
-                              </option>
-                            ))}
-                            <option value="custom">Custom…</option>
-                          </select>
+                            options={[
+                              ...RAMP_PRESETS.map((d) => ({ value: d, label: d })),
+                              { value: 'custom', label: 'Custom…' },
+                            ]}
+                            className="ws-app-select--table"
+                          />
                           {!rampPreset ? (
                             <input
                               className="ws-input table"

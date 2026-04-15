@@ -1,15 +1,32 @@
 import { useEffect, useRef } from 'react'
+import type { BodyType } from '../../models/types'
 
 type Props = {
   value: string
   onChange: (next: string) => void
   /** Used as remount key when switching requests */
   requestKey: string
-  /** Content-Type header value from the request, used for language detection */
+  /** Explicit body type — takes precedence over content-type sniffing */
+  bodyType?: BodyType
+  /** Content-Type header value from the request, used as fallback language detection */
   contentType?: string
 }
 
-function detectLanguage(contentType?: string, body?: string): string {
+function bodyTypeToLanguage(bodyType?: BodyType): string | null {
+  switch (bodyType) {
+    case 'json': return 'json'
+    case 'xml': return 'xml'
+    case 'graphql': return 'graphql'
+    case 'text': return 'plaintext'
+    case 'msgpack': return 'plaintext'
+    default: return null
+  }
+}
+
+function detectLanguage(bodyType?: BodyType, contentType?: string, body?: string): string {
+  const fromType = bodyTypeToLanguage(bodyType)
+  if (fromType) return fromType
+
   const ct = (contentType ?? '').toLowerCase()
   if (ct.includes('application/json') || ct.includes('text/json')) return 'json'
   if (ct.includes('application/xml') || ct.includes('text/xml') || ct.includes('application/soap')) return 'xml'
@@ -39,7 +56,7 @@ export function BodyMonacoEditor(props: Props) {
   const propsRef = useRef(props)
   propsRef.current = props
 
-  const language = detectLanguage(props.contentType, props.value)
+  const language = detectLanguage(props.bodyType, props.contentType, props.value)
 
   useEffect(() => {
     let cancelled = false
@@ -50,7 +67,7 @@ export function BodyMonacoEditor(props: Props) {
       await import('monaco-editor/min/vs/editor/editor.main.css')
       if (cancelled || !hostRef.current) return
 
-      const lang = detectLanguage(propsRef.current.contentType, propsRef.current.value)
+      const lang = detectLanguage(propsRef.current.bodyType, propsRef.current.contentType, propsRef.current.value)
       const initialValue =
         lang === 'json' ? tryPrettyPrintJson(propsRef.current.value) : propsRef.current.value
 

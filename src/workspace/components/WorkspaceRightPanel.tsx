@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { KeyValueTable } from '../../components/ui/KeyValueTable'
+import { AppSelect } from '../../components/ui/AppSelect'
 import type { CorrelationRule, RequestDefinition } from '../../models/types'
 
 type Props = {
@@ -137,13 +138,12 @@ export function WorkspaceRightPanel(props: Props) {
                       <input className="ws-input table" value={r.variableName} onChange={(e) => props.onChangeCorrelation(r.id, { variableName: e.target.value })} />
                     </td>
                     <td>
-                      <select className="ws-select table" value={r.fromRequestId} onChange={(e) => props.onChangeCorrelation(r.id, { fromRequestId: e.target.value })}>
-                        {props.requests.map((req) => (
-                          <option key={req.id} value={req.id}>
-                            {req.name}
-                          </option>
-                        ))}
-                      </select>
+                      <AppSelect
+                        value={r.fromRequestId}
+                        onChange={(v) => props.onChangeCorrelation(r.id, { fromRequestId: v })}
+                        options={props.requests.map((req) => ({ value: req.id, label: req.name }))}
+                        className="ws-app-select--table"
+                      />
                     </td>
                     <td>
                       <input className="ws-input table" value={r.jsonPath} onChange={(e) => props.onChangeCorrelation(r.id, { jsonPath: e.target.value })} />

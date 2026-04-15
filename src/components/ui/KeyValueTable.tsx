@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Plus, X } from 'lucide-react'
 
 type Row = { id: string; key: string; value: string }
 
@@ -25,6 +26,9 @@ type Props = {
   onChange: (next: Record<string, string>) => void
   keyLabel?: string
   valueLabel?: string
+  keyPlaceholder?: string
+  valuePlaceholder?: string
+  addLabel?: string
 }
 
 export function KeyValueTable(props: Props) {
@@ -67,15 +71,26 @@ export function KeyValueTable(props: Props) {
       </div>
       {rows.map((r) => (
         <div key={r.id} className="kv-row">
-          <input className="ws-input kv-cell" value={r.key} onChange={(e) => patchRow(r.id, { key: e.target.value })} placeholder="name" />
-          <input className="ws-input kv-cell" value={r.value} onChange={(e) => patchRow(r.id, { value: e.target.value })} placeholder="value or {{var}}" />
-          <button type="button" className="ws-btn ghost kv-del" onClick={() => removeRow(r.id)}>
-            Remove
+          <input
+            className="ws-input kv-cell"
+            value={r.key}
+            onChange={(e) => patchRow(r.id, { key: e.target.value })}
+            placeholder={props.keyPlaceholder ?? 'Key'}
+          />
+          <input
+            className="ws-input kv-cell"
+            value={r.value}
+            onChange={(e) => patchRow(r.id, { value: e.target.value })}
+            placeholder={props.valuePlaceholder ?? 'Value or {{variable}}'}
+          />
+          <button type="button" className="ws-btn ghost kv-del" title="Remove row" onClick={() => removeRow(r.id)}>
+            <X size={12} strokeWidth={2.5} />
           </button>
         </div>
       ))}
       <button type="button" className="ws-btn ghost kv-add" onClick={addRow}>
-        + Add
+        <Plus size={13} strokeWidth={2.5} />
+        {props.addLabel ?? 'Add Key'}
       </button>
     </div>
   )

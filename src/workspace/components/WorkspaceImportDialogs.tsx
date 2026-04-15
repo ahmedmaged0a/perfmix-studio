@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Upload, FileCode, AlertTriangle, CheckCircle, X } from 'lucide-react'
 import type { Collection, RequestDefinition } from '../../models/types'
+import { AppSelect } from '../../components/ui/AppSelect'
 import { parseCurlCommand, parsedCurlToRequestDefinition } from '../curlParse'
 import { parsePerfMixCollectionImport } from '../collectionIo'
 import { parseJmx } from '../jmxParse'
@@ -189,9 +190,11 @@ export function ImportCurlModal(props: ImportCurlModalProps) {
         <div className="ws-modal-body">
           <label className="ws-field">
             <span className="muted">Target collection</span>
-            <select className="ws-select" value={effectiveColId} onChange={(e) => setCollectionId(e.target.value)}>
-              {props.collections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <AppSelect
+              value={effectiveColId}
+              onChange={setCollectionId}
+              options={props.collections.map((c) => ({ value: c.id, label: c.name }))}
+            />
           </label>
           <label className="ws-field">
             <span className="muted">Paste cURL command</span>
@@ -880,9 +883,11 @@ function ImportCurlBody(props: {
       {props.collections.length > 1 && (
         <div className="ws-field">
           <label className="ws-topbar-label">Add to collection</label>
-          <select className="ws-select" value={collectionId} onChange={(e) => setCollectionId(e.target.value)}>
-            {props.collections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <AppSelect
+            value={collectionId}
+            onChange={setCollectionId}
+            options={props.collections.map((c) => ({ value: c.id, label: c.name }))}
+          />
         </div>
       )}
       <div className="ws-modal-foot">

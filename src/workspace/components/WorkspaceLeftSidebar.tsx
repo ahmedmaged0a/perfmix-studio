@@ -265,7 +265,7 @@ export function WorkspaceLeftSidebar(props: Props) {
               title="Remove all collections and start with one empty Default"
               onClick={props.onDeleteAllCollections}
             >
-              Reset all…
+              Reset All
             </button>
           ) : null}
         </div>

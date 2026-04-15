@@ -153,6 +153,17 @@ export type HttpOutputPayload =
     }
   | { kind: 'batch'; at: string; collectionName: string; items: HttpBatchItem[] }
 
+export type BodyType =
+  | 'none'
+  | 'form-data'
+  | 'x-www-form-urlencoded'
+  | 'json'
+  | 'xml'
+  | 'text'
+  | 'binary'
+  | 'graphql'
+  | 'msgpack'
+
 export type RequestDefinition = {
   id: string
   name: string
@@ -161,6 +172,10 @@ export type RequestDefinition = {
   query: Record<string, string>
   headers: Record<string, string>
   bodyText: string
+  /** Explicit body type selection. When absent, type is auto-detected from Content-Type header. */
+  bodyType?: BodyType
+  /** Key-value pairs for form-data and x-www-form-urlencoded body types. */
+  bodyFormData?: Record<string, string>
   testCases: RequestTestCase[]
   assertions?: RequestAssertion[]
   docs?: string

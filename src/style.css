@@ -79,35 +79,114 @@
    LIGHT MODE — [data-theme="light"] overrides
    ============================================================ */
 [data-theme="light"] {
-  --color-bg:           #f4f7fc;
-  --color-bg-deep:      #eaeff8;
+  --color-bg:           #f1f5fb;
+  --color-bg-deep:      #e8eef8;
   --color-surface:      #ffffff;
-  --color-surface-alt:  #f0f4fb;
-  --color-surface-hover:#e8eef8;
+  --color-surface-alt:  #f6f9fe;
+  --color-surface-hover:#edf2fb;
 
-  --color-border:       #d0d8ec;
-  --color-border-mid:   #b8c6de;
+  --color-border:       #cbd5e9;
+  --color-border-mid:   #aab8d4;
 
-  --color-text:         #0e1424;
-  --color-text-muted:   #4a5678;
-  --color-text-dim:     #6e7d9c;
+  --color-text:         #0d1526;
+  --color-text-muted:   #445070;
+  --color-text-dim:     #6b7a99;
 
-  --color-accent:       #0d9488;   /* darker teal for contrast on light */
+  --color-accent:       #0d9488;   /* darker teal for readability on white */
   --color-accent-dim:   rgba(13, 148, 136, 0.10);
   --color-accent-hover: #0f766e;
-  --color-accent-secondary: #6366f1;
+  --color-accent-secondary: #4f46e5;
 
-  --color-success:      #16a34a;
-  --color-success-bg:   rgba(22, 163, 74, 0.09);
-  --color-warning:      #d97706;
-  --color-warning-bg:   rgba(217, 119, 6, 0.09);
-  --color-error:        #dc2626;
-  --color-error-bg:     rgba(220, 38, 38, 0.09);
-  --color-info:         #0284c7;
+  --color-success:      #15803d;
+  --color-success-bg:   rgba(21, 128, 61, 0.08);
+  --color-warning:      #b45309;
+  --color-warning-bg:   rgba(180, 83, 9, 0.08);
+  --color-error:        #b91c1c;
+  --color-error-bg:     rgba(185, 28, 28, 0.08);
+  --color-info:         #0369a1;
 
-  --shadow-sm:  0 1px 3px rgba(0,0,0,0.12);
-  --shadow-md:  0 4px 16px rgba(0,0,0,0.14);
-  --shadow-lg:  0 8px 32px rgba(0,0,0,0.16);
+  --shadow-sm:  0 1px 4px rgba(0,0,0,0.10);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.12);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,0.14);
+
+  /* HTTP method colors adjusted for light background */
+  --method-get:    #15803d;
+  --method-post:   #0369a1;
+  --method-put:    #b45309;
+  --method-patch:  #6d28d9;
+  --method-delete: #b91c1c;
+  --method-head:   #475569;
+  --method-options:#64748b;
+}
+
+/* Light mode component overrides */
+[data-theme="light"] .ws-topbar,
+[data-theme="light"] .ws-left,
+[data-theme="light"] .ws-main-tabs,
+[data-theme="light"] .ws-bottom {
+  background: #eef3fb;
+}
+
+[data-theme="light"] .ws-btn.primary {
+  box-shadow: 0 0 14px rgba(13, 148, 136, 0.25);
+  color: #ffffff;
+}
+
+[data-theme="light"] .ws-btn.primary:hover {
+  box-shadow: 0 0 20px rgba(13, 148, 136, 0.35);
+}
+
+[data-theme="light"] .ws-main-tab.active {
+  background: var(--color-surface);
+  color: #0d1526;
+}
+
+[data-theme="light"] .ws-panel {
+  background: var(--color-surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .ws-tree-item {
+  background: var(--color-surface);
+}
+
+[data-theme="light"] .ws-tree-item.active {
+  background: var(--color-accent-dim);
+}
+
+[data-theme="light"] .ws-input,
+[data-theme="light"] .ws-select,
+[data-theme="light"] .ws-textarea {
+  background: var(--color-surface);
+}
+
+[data-theme="light"] .ws-left-import-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border-mid);
+  color: var(--color-text-muted);
+}
+
+[data-theme="light"] .ws-left-import-btn:hover {
+  background: var(--color-accent-dim);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+[data-theme="light"] .kv-add {
+  background: rgba(13, 148, 136, 0.06);
+  border-color: rgba(13, 148, 136, 0.3);
+  color: #0d9488;
+}
+
+[data-theme="light"] .kv-add:hover {
+  background: rgba(13, 148, 136, 0.12);
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.08);
+}
+
+[data-theme="light"] .ws-toast {
+  background: #0d1526;
+  color: #f1f5fb;
 }
 
 * {
@@ -377,7 +456,7 @@ nav {
 }
 
 .topbar {
-  border: 1px solid #1d2940;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 14px 16px;
   display: flex;
@@ -458,7 +537,7 @@ nav {
 }
 
 .card {
-  border: 1px solid #1d2940;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 14px;
   background: linear-gradient(180deg, #0e182c 0%, #0c1628 100%);
@@ -537,13 +616,13 @@ td button {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  border-top: 1px solid #1d2940;
+  border-top: 1px solid var(--color-border);
   padding-top: 8px;
   margin-top: 8px;
 }
 
 .composer-box {
-  border-top: 1px solid #1d2940;
+  border-top: 1px solid var(--color-border);
   margin-top: 12px;
   padding-top: 12px;
 }
@@ -653,7 +732,7 @@ table {
 
 th,
 td {
-  border-bottom: 1px solid #1d2940;
+  border-bottom: 1px solid var(--color-border);
   padding: 10px 8px;
   text-align: left;
 }
@@ -673,7 +752,7 @@ th {
 }
 
 .chat-box {
-  border: 1px solid #1d2940;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 14px;
   background: #0e182c;
@@ -689,7 +768,7 @@ th {
 
   .sidebar {
     border-right: none;
-    border-bottom: 1px solid #1d2940;
+    border-bottom: 1px solid var(--color-border);
   }
 }
 
@@ -1024,15 +1103,235 @@ th {
   border-color: var(--color-error);
 }
 
+/* Outlined accent button — for secondary "add" actions like + Test case, + Assertion */
+.ws-btn--outline-accent {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  font-weight: 500;
+  gap: 5px;
+  letter-spacing: 0.01em;
+}
+
+.ws-btn--outline-accent:hover {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+[data-theme="light"] .ws-btn--outline-accent {
+  border-color: rgba(13, 148, 136, 0.35);
+  color: #0d9488;
+  background: rgba(13, 148, 136, 0.06);
+}
+
+[data-theme="light"] .ws-btn--outline-accent:hover {
+  background: rgba(13, 148, 136, 0.12);
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+/* Kept for any remaining non-topbar compact selects */
 .ws-select--compact {
-  padding: 6px 10px;
-  font-size: 0.88rem;
+  padding: 5px 28px 5px 10px;
+  font-size: 0.82rem;
   min-width: 0;
+  border-radius: var(--radius-md);
 }
 
 .ws-select--wide {
   min-width: 140px;
   max-width: min(240px, 100%);
+}
+
+/* ── TopBar custom select component ────────────────────────────── */
+.ws-topbar-select {
+  position: relative;
+}
+
+.ws-topbar-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px 4px 9px;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.ws-topbar-select-trigger:hover {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.ws-topbar-select-trigger.open {
+  background: var(--color-accent-dim);
+  border-color: var(--color-accent);
+}
+
+/* Dim context prefix — "Env", "Mode", "Project" etc. */
+.ws-topbar-select-prefix {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  line-height: 1;
+}
+
+.ws-topbar-select-trigger.open .ws-topbar-select-prefix {
+  color: color-mix(in srgb, var(--color-accent) 70%, var(--color-text-dim));
+}
+
+/* Separator dot */
+.ws-topbar-select-sep {
+  font-size: 0.65rem;
+  color: var(--color-text-dim);
+  opacity: 0.5;
+  line-height: 1;
+  user-select: none;
+}
+
+/* The actual selected value */
+.ws-topbar-select-value {
+  font-size: 0.83rem;
+  font-weight: 500;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.ws-topbar-select-trigger.open .ws-topbar-select-value {
+  color: var(--color-accent);
+}
+
+/* Chevron */
+.ws-topbar-select-chevron {
+  flex-shrink: 0;
+  color: var(--color-text-dim);
+  transition: transform 0.18s ease, color var(--transition);
+  margin-left: 1px;
+}
+
+.ws-topbar-select-trigger:hover .ws-topbar-select-chevron {
+  color: var(--color-text);
+}
+
+.ws-topbar-select-trigger.open .ws-topbar-select-chevron {
+  color: var(--color-accent);
+}
+
+.ws-topbar-select-chevron.rotated {
+  transform: rotate(180deg);
+}
+
+/* Dropdown panel */
+.ws-topbar-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 152px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg), 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 1200;
+  overflow: hidden;
+  padding: 4px;
+}
+
+/* Option rows */
+.ws-topbar-select-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 0.84rem;
+  font-family: var(--font-sans);
+  text-align: left;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), padding-left var(--transition);
+  white-space: nowrap;
+}
+
+.ws-topbar-select-option:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  color: var(--color-text);
+  padding-left: 13px;
+}
+
+.ws-topbar-select-option.active {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.ws-topbar-select-option.active:hover {
+  background: var(--color-accent-dim);
+  color: var(--color-accent-hover);
+  padding-left: 13px;
+}
+
+.ws-topbar-select-option-check {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+}
+
+/* ── Light mode overrides ─────────────────────────────────────── */
+[data-theme="light"] .ws-topbar-select-trigger {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.11);
+}
+
+[data-theme="light"] .ws-topbar-select-trigger:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.17);
+}
+
+[data-theme="light"] .ws-topbar-select-trigger.open {
+  background: rgba(13, 148, 136, 0.08);
+  border-color: #0d9488;
+}
+
+[data-theme="light"] .ws-topbar-select-trigger.open .ws-topbar-select-value {
+  color: #0d9488;
+}
+
+[data-theme="light"] .ws-topbar-select-trigger.open .ws-topbar-select-chevron {
+  color: #0d9488;
+}
+
+[data-theme="light"] .ws-topbar-select-menu {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.07);
+}
+
+[data-theme="light"] .ws-topbar-select-option:hover {
+  background: rgba(13, 148, 136, 0.08);
+  color: #0d9488;
+  padding-left: 13px;
+}
+
+[data-theme="light"] .ws-topbar-select-option.active {
+  color: #0d9488;
+}
+
+[data-theme="light"] .ws-topbar-select-option.active:hover {
+  background: rgba(13, 148, 136, 0.12);
+  color: #0d9488;
 }
 
 .ws-input--narrow {
@@ -1077,9 +1376,13 @@ th {
   border-color: var(--color-accent);
 }
 
-/* Light mode dropdown arrow */
+/* Light mode dropdown arrow — must also re-declare repeat/position because the
+   [data-theme="light"] .ws-select shorthand above resets all background sub-properties */
 [data-theme="light"] .ws-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%234a5678' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
 }
 
 .ws-input.grow {
@@ -1326,18 +1629,44 @@ th {
 }
 
 .ws-tree-add {
-  border: 1px dashed var(--color-border-mid);
-  background: transparent;
-  color: var(--color-text-muted);
-  border-radius: 8px;
-  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+  color: var(--color-accent);
+  opacity: 0.75;
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
   cursor: pointer;
-  transition: border-color var(--transition), color var(--transition);
+  font-size: 0.82rem;
+  font-weight: 500;
+  width: 100%;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  letter-spacing: 0.01em;
+  transition: border-color var(--transition), color var(--transition), background var(--transition),
+    opacity var(--transition), box-shadow var(--transition);
 }
 
 .ws-tree-add:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  opacity: 1;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+[data-theme="light"] .ws-tree-add {
+  border-color: rgba(13, 148, 136, 0.3);
+  background: rgba(13, 148, 136, 0.04);
+  color: #0d9488;
+}
+
+[data-theme="light"] .ws-tree-add:hover {
+  border-color: #0d9488;
+  background: rgba(13, 148, 136, 0.1);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.08);
 }
 
 .ws-center {
@@ -1353,32 +1682,36 @@ th {
 }
 
 .ws-tab {
-  border: 1px solid #2a3f68;
-  background: #0b1528;
-  color: #cbd5e1;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
   border-bottom: 0;
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   padding: 8px 12px;
   cursor: pointer;
+  font-size: 0.86rem;
+  transition: color var(--transition), border-color var(--transition);
 }
 
 .ws-tab.active {
-  background: #0f1f3a;
-  border-color: #3b82f6;
-  color: #ffffff;
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  color: var(--color-text);
 }
 
 .ws-panel {
-  margin: 0 12px 12px 12px;
+  margin: 0 12px 12px;
   border: 1px solid var(--color-border);
   border-radius: 0 var(--radius-md) var(--radius-md) var(--radius-md);
-  padding: 14px;
+  padding: 16px;
   background: var(--color-surface);
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow: auto;
   box-sizing: border-box;
+  /* Ensure the panel top-border connects cleanly with the active tab above */
+  border-top-color: var(--color-border);
 }
 
 .ws-empty {
@@ -1389,16 +1722,17 @@ th {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .ws-k6-report-banner {
   margin: 14px 0 16px;
   padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 20, 38, 0.75);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
   max-width: 100%;
   box-sizing: border-box;
   overflow-wrap: anywhere;
@@ -1406,20 +1740,20 @@ th {
 }
 
 .ws-k6-report-banner-title {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 650;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #8eb4e8;
+  color: var(--color-accent-secondary);
   margin-bottom: 10px;
   overflow-wrap: anywhere;
 }
 
 .ws-k6-report-banner-lead {
   margin: 0 0 14px;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  color: #c5d0e3;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -1429,10 +1763,11 @@ th {
   align-items: flex-start;
   gap: 10px;
   cursor: pointer;
-  font-size: 0.95rem;
-  color: #e2e8f0;
+  font-size: 0.88rem;
+  color: var(--color-text);
   line-height: 1.35;
   overflow-wrap: anywhere;
+  user-select: none;
 }
 
 .ws-k6-report-banner-checkbox input {
@@ -1527,8 +1862,9 @@ th {
 
 .ws-subtabs {
   display: flex;
-  gap: 8px;
-  margin: 10px 0 10px 0;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 12px 0 10px;
 }
 
 .ws-subtab {
@@ -1587,12 +1923,39 @@ th {
   overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
 }
 
 .ws-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.88rem;
+}
+
+.ws-table th {
+  padding: 9px 10px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-dim);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-deep);
+  white-space: nowrap;
+}
+
+.ws-table th:first-child { border-radius: var(--radius-sm) 0 0 0; }
+.ws-table th:last-child  { border-radius: 0 var(--radius-sm) 0 0; }
+
+.ws-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.ws-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .ws-table.tight td,
@@ -1605,6 +1968,7 @@ th {
 }
 
 .ws-table tbody tr.active {
+  background: var(--color-accent-dim);
   outline: 2px solid var(--color-accent-dim);
 }
 
@@ -1905,7 +2269,7 @@ th {
   .ws-right {
     grid-column: 1 / -1;
     border-right: none;
-    border-top: 1px solid #1d2940;
+    border-top: 1px solid var(--color-border);
     max-height: 220px;
     overflow: auto;
   }
@@ -1936,7 +2300,7 @@ th {
     max-height: 160px;
     overflow: auto;
     border-right: none;
-    border-bottom: 1px solid #1d2940;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .ws-right {
@@ -2043,29 +2407,48 @@ th {
 }
 
 .kv-add {
-  margin-top: 6px;
-  font-size: 0.83rem;
+  margin-top: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
   color: var(--color-accent);
-  border-color: var(--color-accent-dim);
-  background: var(--color-accent-dim);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+  border-radius: var(--radius-full);
+  padding: 4px 14px 4px 10px;
+  gap: 5px;
+  letter-spacing: 0.01em;
+  transition: background var(--transition), border-color var(--transition),
+    color var(--transition), box-shadow var(--transition);
 }
 
 .kv-add:hover {
-  background: rgba(45, 212, 191, 0.2);
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
   border-color: var(--color-accent);
   color: var(--color-accent-hover);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 10%, transparent);
 }
 
 .kv-del {
-  padding: 5px 9px;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
+  padding: 0;
+  width: 26px;
+  height: 26px;
+  color: var(--color-error);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  opacity: 0.6;
+  transition: color var(--transition), background var(--transition),
+    border-color var(--transition), opacity var(--transition);
 }
 
 .kv-del:hover {
   color: var(--color-error);
   background: var(--color-error-bg);
   border-color: rgba(248, 113, 113, 0.35);
+  opacity: 1;
 }
 
 .ws-td-stack {
@@ -2076,16 +2459,17 @@ th {
 
 .ws-details summary {
   cursor: pointer;
-  color: #93c5fd;
+  color: var(--color-accent-secondary);
   margin: 8px 0;
 }
 
 .ws-pre {
   margin: 0;
   padding: 10px;
-  border-radius: 12px;
-  border: 1px solid #1d2940;
-  background: #070f1c;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-deep);
+  color: var(--color-text);
   max-height: 220px;
   overflow: auto;
   font-size: 12px;
@@ -2104,10 +2488,10 @@ th {
 }
 
 .ws-batch-item {
-  border: 1px solid #1d2940;
-  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 6px 10px;
-  background: rgba(7, 15, 28, 0.6);
+  background: var(--color-surface-alt);
 }
 
 .ws-batch-summary {
@@ -2189,6 +2573,22 @@ th {
   gap: 10px;
   padding: 12px 16px;
   border-top: 1px solid var(--color-border);
+}
+
+/* ── Input modal (name/text prompt) ─────────────────────────────────────── */
+.ws-input-modal-label {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.ws-input-modal-field {
+  width: 100%;
+  font-size: 1rem;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
 }
 
 .ws-tree-rename {
@@ -2744,6 +3144,334 @@ th {
   color: var(--color-error);
 }
 
+
+/* ============================================================
+   APP SELECT — generic custom dropdown
+   ============================================================ */
+.ws-app-select {
+  position: relative;
+  display: inline-block;
+}
+
+.ws-app-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.84rem;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.ws-app-select-trigger:hover {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 5%, var(--color-bg-deep));
+}
+
+.ws-app-select-trigger.open {
+  border-color: var(--color-accent);
+  outline: 2px solid var(--color-accent-dim);
+  outline-offset: 0;
+}
+
+.ws-app-select-value {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-app-select-chevron {
+  flex-shrink: 0;
+  color: var(--color-text-dim);
+  transition: transform 0.18s ease;
+}
+
+.ws-app-select-chevron.rotated {
+  transform: rotate(180deg);
+}
+
+.ws-app-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg), 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 1200;
+  padding: 4px;
+  overflow: hidden;
+}
+
+.ws-app-select-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 0.84rem;
+  font-family: var(--font-sans);
+  text-align: left;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition), padding-left var(--transition);
+}
+
+.ws-app-select-option:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  color: var(--color-text);
+  padding-left: 13px;
+}
+
+.ws-app-select-option.active {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.ws-app-select-option.active:hover {
+  background: var(--color-accent-dim);
+  color: var(--color-accent-hover);
+  padding-left: 13px;
+}
+
+.ws-app-select-check {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+}
+
+/* Table-context variant — tighter padding, full width */
+.ws-app-select--table .ws-app-select-trigger {
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  width: 100%;
+}
+
+[data-theme="light"] .ws-app-select-trigger {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+  color: var(--color-text);
+}
+
+[data-theme="light"] .ws-app-select-trigger:hover {
+  border-color: #0d9488;
+  background: rgba(13, 148, 136, 0.04);
+}
+
+[data-theme="light"] .ws-app-select-trigger.open {
+  border-color: #0d9488;
+  outline-color: rgba(13, 148, 136, 0.2);
+}
+
+[data-theme="light"] .ws-app-select-menu {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.07);
+}
+
+[data-theme="light"] .ws-app-select-option:hover {
+  background: rgba(13, 148, 136, 0.08);
+  color: #0d9488;
+  padding-left: 13px;
+}
+
+[data-theme="light"] .ws-app-select-option.active {
+  color: #0d9488;
+}
+
+[data-theme="light"] .ws-app-select-option.active:hover {
+  background: rgba(13, 148, 136, 0.12);
+  color: #0d9488;
+}
+
+/* ============================================================
+   METHOD SELECT — HTTP method badge with colour coding
+   ============================================================ */
+.ws-method-select {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ws-method-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-family: var(--font-sans);
+  border-radius: var(--radius-md);
+  border: 1px solid;
+  cursor: pointer;
+  transition: filter var(--transition), opacity var(--transition);
+  white-space: nowrap;
+}
+
+.ws-method-select-trigger:hover {
+  filter: brightness(1.1);
+}
+
+.ws-method-select-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  min-width: 46px;
+  text-align: center;
+}
+
+.ws-method-select-chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.18s ease;
+}
+
+.ws-method-select-chevron.rotated {
+  transform: rotate(180deg);
+}
+
+.ws-method-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 140px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg), 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 1200;
+  padding: 4px;
+  overflow: hidden;
+}
+
+.ws-method-select-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-family: var(--font-sans);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.ws-method-select-option:hover {
+  background: var(--color-surface-alt);
+}
+
+.ws-method-select-option.active {
+  background: var(--color-surface-alt);
+}
+
+.ws-method-select-option-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  min-width: 52px;
+}
+
+.ws-method-select-check {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+[data-theme="light"] .ws-method-select-menu {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.07);
+}
+
+[data-theme="light"] .ws-method-select-option:hover,
+[data-theme="light"] .ws-method-select-option.active {
+  background: #f4f7fc;
+}
+
+/* ============================================================
+   TIER 2 — BODY TYPE SELECTOR
+   ============================================================ */
+.ws-body-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ws-body-type-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.ws-body-type-btn {
+  padding: 4px 11px;
+  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+
+.ws-body-type-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.ws-body-type-btn.active {
+  background: var(--color-accent-dim);
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  font-weight: 500;
+}
+
+[data-theme="light"] .ws-body-type-bar {
+  background: #eef3fb;
+}
+
+[data-theme="light"] .ws-body-type-btn.active {
+  background: rgba(13, 148, 136, 0.1);
+  color: #0d9488;
+  border-color: rgba(13, 148, 136, 0.3);
+}
+
+.ws-body-none {
+  padding: 20px 16px;
+  text-align: center;
+  font-size: 0.88rem;
+}
+
+.ws-body-binary {
+  padding: 12px 0;
+}
+
+.ws-body-binary-input {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
 
 /* ============================================================
    TIER 2 — BODY MONACO EDITOR
