@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { MousePointerClick, Plus, Trash2, Zap } from 'lucide-react'
 import { KeyValueTable } from '../../components/ui/KeyValueTable'
 import type {
   AssertionType,
@@ -10,6 +11,7 @@ import type {
 } from '../../models/types'
 import { isCriteriaToggleOn } from '../../models/types'
 import { DURATION_PRESETS, RAMP_PRESETS } from '../durationPresets'
+import { BodyMonacoEditor } from './BodyMonacoEditor'
 import { PmScriptMonacoEditor } from './PmScriptMonacoEditor'
 
 function parseDurationToSeconds(d: string): number {
@@ -73,7 +75,15 @@ export function WorkspaceRequestPanel(props: Props) {
   if (!request) {
     return (
       <section className="ws-center">
-        <div className="ws-panel ws-empty">Select or create a request.</div>
+        <div className="ws-panel ws-empty">
+          <div className="ws-empty-state">
+            <MousePointerClick size={36} className="ws-empty-state-icon" />
+            <p className="ws-empty-state-title">No request selected</p>
+            <p className="ws-empty-state-text">
+              Select a request from the sidebar, or create a new one to start building.
+            </p>
+          </div>
+        </div>
       </section>
     )
   }
@@ -101,7 +111,13 @@ export function WorkspaceRequestPanel(props: Props) {
             onChange={(e) => props.onChangeRequest({ url: e.target.value })}
             placeholder="https://api.example.com/path"
           />
-          <button type="button" className="ws-btn primary" disabled={props.sending} onClick={() => void props.onSend()}>
+          <button
+            type="button"
+            className="ws-btn primary"
+            disabled={props.sending}
+            title="Send request (Ctrl+Enter)"
+            onClick={() => void props.onSend()}
+          >
             {props.sending ? 'Sending…' : 'Send'}
           </button>
         </div>
@@ -126,23 +142,41 @@ export function WorkspaceRequestPanel(props: Props) {
         </div>
 
         <div className="ws-subtabs">
+          {/* Params */}
           <button type="button" className={requestSubTab === 'params' ? 'ws-subtab active' : 'ws-subtab'} onClick={() => setRequestSubTab('params')}>
             Params
+            {Object.keys(request.query ?? {}).length > 0 && (
+              <span className="ws-subtab-badge">{Object.keys(request.query).length}</span>
+            )}
           </button>
+          {/* Headers */}
           <button type="button" className={requestSubTab === 'headers' ? 'ws-subtab active' : 'ws-subtab'} onClick={() => setRequestSubTab('headers')}>
             Headers
+            {Object.keys(request.headers ?? {}).length > 0 && (
+              <span className="ws-subtab-badge">{Object.keys(request.headers).length}</span>
+            )}
           </button>
+          {/* Body */}
           <button type="button" className={requestSubTab === 'body' ? 'ws-subtab active' : 'ws-subtab'} onClick={() => setRequestSubTab('body')}>
             Body
+            {request.bodyText && <span className="ws-subtab-dot" title="Body has content" />}
           </button>
+          {/* Assertions */}
           <button type="button" className={requestSubTab === 'assertions' ? 'ws-subtab active' : 'ws-subtab'} onClick={() => setRequestSubTab('assertions')}>
-            Assertions{request.assertions?.length ? ` (${request.assertions.length})` : ''}
+            Assertions
+            {(request.assertions?.length ?? 0) > 0 && (
+              <span className="ws-subtab-badge">{request.assertions!.length}</span>
+            )}
           </button>
+          {/* Pre-request */}
           <button type="button" className={requestSubTab === 'preScript' ? 'ws-subtab active' : 'ws-subtab'} onClick={() => setRequestSubTab('preScript')}>
             Pre-request
+            {request.preRequestScript?.trim() && <span className="ws-subtab-dot" title="Script has content" />}
           </button>
+          {/* Post-request */}
           <button type="button" className={requestSubTab === 'postScript' ? 'ws-subtab active' : 'ws-subtab'} onClick={() => setRequestSubTab('postScript')}>
             Post-request
+            {request.postRequestScript?.trim() && <span className="ws-subtab-dot" title="Script has content" />}
           </button>
         </div>
 
@@ -161,10 +195,17 @@ export function WorkspaceRequestPanel(props: Props) {
         ) : null}
 
         {requestSubTab === 'body' ? (
-          <label className="ws-field">
-            <span className="muted">Body</span>
-            <textarea className="ws-textarea" rows={12} value={request.bodyText} onChange={(e) => props.onChangeRequest({ bodyText: e.target.value })} />
-          </label>
+          <div className="ws-field">
+            <BodyMonacoEditor
+              key={request.id}
+              requestKey={request.id}
+              value={request.bodyText ?? ''}
+              onChange={(v) => props.onChangeRequest({ bodyText: v })}
+              contentType={
+                Object.entries(request.headers ?? {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1]
+              }
+            />
+          </div>
         ) : null}
 
         {requestSubTab === 'preScript' ? (
@@ -206,10 +247,17 @@ export function WorkspaceRequestPanel(props: Props) {
               <button type="button" className="ws-btn ghost" onClick={() => {
                 const a: RequestAssertion = { id: `assert-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, type: 'status_code', enabled: true, target: '200' }
                 props.onChangeRequest({ assertions: [...(request.assertions ?? []), a] })
-              }}>+ Assertion</button>
+              }}>
+                <Plus size={13} style={{ marginRight: 4 }} />
+                Assertion
+              </button>
             </div>
             {(request.assertions ?? []).length === 0 ? (
-              <div className="ws-muted-panel">No assertions. Click "+ Assertion" to add one.</div>
+              <div className="ws-empty-state ws-empty-state--sm">
+                <Zap size={22} className="ws-empty-state-icon" />
+                <p className="ws-empty-state-title">No assertions yet</p>
+                <p className="ws-empty-state-text">Assertions validate responses on Send and become k6 checks in load tests.</p>
+              </div>
             ) : (
               <div className="ws-table-wrap">
                 <table className="ws-table">
@@ -275,11 +323,12 @@ export function WorkspaceRequestPanel(props: Props) {
                           <button
                             type="button"
                             className="ws-btn-icon danger"
+                            title="Remove assertion"
                             onClick={() => {
                               const next = (request.assertions ?? []).filter((x) => x.id !== a.id)
                               props.onChangeRequest({ assertions: next })
                             }}
-                          >✕</button>
+                          ><Trash2 size={13} /></button>
                         </td>
                       </tr>
                     ))}
@@ -505,7 +554,7 @@ export function WorkspaceRequestPanel(props: Props) {
                           title="Delete test case"
                           onClick={(e) => { e.stopPropagation(); props.onDeleteTestCase(tc.id) }}
                         >
-                          ✕
+                          <Trash2 size={13} />
                         </button>
                       </td>
                     </tr>

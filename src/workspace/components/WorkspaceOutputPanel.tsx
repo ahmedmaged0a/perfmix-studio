@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Send, Zap, Copy, CheckCheck, Terminal } from 'lucide-react'
 import type {
   HttpBatchItem,
   HttpExecuteResponse,
@@ -143,8 +144,10 @@ function CopyButton({ text }: { text: string }) {
       type="button"
       className="ws-btn ghost"
       onClick={copy}
-      style={{ padding: '2px 8px', fontSize: '0.78rem', minWidth: 56 }}
+      title="Copy to clipboard"
+      style={{ padding: '2px 8px', fontSize: '0.78rem', minWidth: 64, display: 'inline-flex', alignItems: 'center', gap: 4 }}
     >
+      {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
       {copied ? 'Copied!' : 'Copy'}
     </button>
   )
@@ -339,9 +342,13 @@ export function WorkspaceOutputPanel(props: Props) {
         <section className="ws-output-card">
           <div className="ws-title">Last HTTP response</div>
           {!props.http ? (
-            <p className="muted">
-              Use <strong>Send</strong> on the request or <strong>Send all</strong> on a collection to capture responses here.
-            </p>
+            <div className="ws-empty-state">
+              <Send size={28} className="ws-empty-state-icon" />
+              <p className="ws-empty-state-title">No response yet</p>
+              <p className="ws-empty-state-text">
+                Hit <strong>Send</strong> on a request, or <strong>▶ Send all</strong> on a collection to capture responses here.
+              </p>
+            </div>
           ) : props.http.kind === 'single' ? (
             <SingleResponseBlock
               method={props.http.method}
@@ -360,52 +367,96 @@ export function WorkspaceOutputPanel(props: Props) {
         <section className="ws-output-card">
           <div className="ws-title">Last k6 run snapshot</div>
           {!props.k6 ? (
-            <p className="muted">Run a load test from the top bar. Summary metrics appear here (separate from raw logs).</p>
+            <div className="ws-empty-state">
+              <Zap size={28} className="ws-empty-state-icon" />
+              <p className="ws-empty-state-title">No load test run yet</p>
+              <p className="ws-empty-state-text">
+                Press <strong>Run</strong> in the top bar to start a k6 load test. Summary metrics will appear here.
+              </p>
+            </div>
           ) : (
             <div>
               <div className="ws-output-meta">
-                <span className="pill">
-                  {props.k6.status} · {props.k6.runId ?? '—'}
+                <span className={`ws-run-status-badge ws-run-status--${props.k6.status}`}>
+                  {props.k6.status}
                 </span>
                 <span className="muted tiny">{new Date(props.k6.at).toLocaleString()}</span>
+                {props.k6.runId ? (
+                  <span className="muted tiny mono" title={`Run ID: ${props.k6.runId}`}>
+                    {props.k6.runId}
+                  </span>
+                ) : null}
               </div>
               <div className="ws-kpi-grid compact">
-                <div className="ws-kpi">
-                  <div className="muted">Avg</div>
+                <div className="ws-kpi" title="Average response time across all requests in this run">
+                  <div className="ws-kpi-label">Avg response</div>
                   <div className="ws-kpi-value">{fmtMs(props.k6.metrics.avgMs)}</div>
                 </div>
-                <div className="ws-kpi">
-                  <div className="muted">p95</div>
+                <div className="ws-kpi" title="95th percentile response time — 95% of requests completed within this time">
+                  <div className="ws-kpi-label">p95 response</div>
                   <div className="ws-kpi-value">{fmtMs(props.k6.metrics.p95Ms)}</div>
                 </div>
-                <div className="ws-kpi">
-                  <div className="muted">Errors</div>
-                  <div className="ws-kpi-value">
-                    {props.k6.metrics.errorRate == null ? '—' : `${(props.k6.metrics.errorRate * 100).toFixed(3)}%`}
+                <div className="ws-kpi" title="Percentage of requests that returned an error (non-2xx or network failure)">
+                  <div className="ws-kpi-label">Error rate</div>
+                  <div
+                    className="ws-kpi-value"
+                    style={{
+                      color:
+                        props.k6.metrics.errorRate != null && props.k6.metrics.errorRate > 0.01
+                          ? 'var(--color-error)'
+                          : undefined,
+                    }}
+                  >
+                    {props.k6.metrics.errorRate == null
+                      ? '—'
+                      : `${(props.k6.metrics.errorRate * 100).toFixed(2)}%`}
                   </div>
                 </div>
-                <div className="ws-kpi">
-                  <div className="muted">RPS</div>
-                  <div className="ws-kpi-value">{props.k6.metrics.rps == null ? '—' : props.k6.metrics.rps.toFixed(2)}</div>
-                </div>
-                <div className="ws-kpi">
-                  <div className="muted">Checks</div>
+                <div className="ws-kpi" title="Requests per second — throughput during the steady-state phase">
+                  <div className="ws-kpi-label">Throughput</div>
                   <div className="ws-kpi-value">
-                    {props.k6.metrics.checksTotal ? `${props.k6.metrics.checksPassed ?? 0}/${props.k6.metrics.checksTotal}` : '—'}
+                    {props.k6.metrics.rps == null ? '—' : `${props.k6.metrics.rps.toFixed(1)} req/s`}
+                  </div>
+                </div>
+                <div className="ws-kpi" title="k6 check() assertions — how many passed vs total evaluated">
+                  <div className="ws-kpi-label">Checks</div>
+                  <div
+                    className="ws-kpi-value"
+                    style={{
+                      color:
+                        (props.k6.metrics.checksFailed ?? 0) > 0 ? 'var(--color-error)' : undefined,
+                    }}
+                  >
+                    {props.k6.metrics.checksTotal
+                      ? `${props.k6.metrics.checksPassed ?? 0} / ${props.k6.metrics.checksTotal}`
+                      : '—'}
                   </div>
                   {(props.k6.metrics.checksFailed ?? 0) > 0 ? (
-                    <div style={{ color: '#f87171', fontSize: '0.78rem' }}>{props.k6.metrics.checksFailed} failed</div>
+                    <div className="ws-kpi-sub error">{props.k6.metrics.checksFailed} failed</div>
                   ) : null}
                 </div>
-                <div className="ws-kpi">
-                  <div className="muted">Req Failed</div>
-                  <div className="ws-kpi-value">
-                    {props.k6.metrics.httpReqFailed != null ? props.k6.metrics.httpReqFailed.toFixed(0) : '—'}
+                <div className="ws-kpi" title="Total number of HTTP requests that failed (network errors or non-2xx responses)">
+                  <div className="ws-kpi-label">Failed reqs</div>
+                  <div
+                    className="ws-kpi-value"
+                    style={{
+                      color:
+                        props.k6.metrics.httpReqFailed != null && props.k6.metrics.httpReqFailed > 0
+                          ? 'var(--color-error)'
+                          : undefined,
+                    }}
+                  >
+                    {props.k6.metrics.httpReqFailed != null
+                      ? props.k6.metrics.httpReqFailed.toFixed(0)
+                      : '—'}
                   </div>
                 </div>
               </div>
               <details className="ws-details" style={{ marginTop: 10 }}>
-                <summary>How to run in terminal</summary>
+                <summary>
+                  <Terminal size={13} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                  Run in terminal
+                </summary>
                 <pre className="ws-pre">{`# Export the k6 script from the top bar first, then:
 k6 run your_script.k6.js
 

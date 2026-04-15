@@ -20,8 +20,8 @@ import { extractAggregateMetricsExcludingReport } from '../k6/summaryPerRequest'
 import { buildWorkspaceCollectionK6Script, buildWorkspaceK6Script } from './k6/workspaceGenerator'
 import { buildPerfMixCollectionExportJson } from './collectionIo'
 import { collectionToCurlSh, requestToCurl } from './curlExport'
-import { ImportCollectionModal, ImportCurlModal } from './components/WorkspaceImportDialogs'
-import { WorkspaceConfirmModal } from './components/WorkspaceConfirmModal'
+import { ImportCollectionModal, ImportCurlModal, ImportJmxModal, ImportHarModal, ImportOpenApiModal, ImportPostmanModal, ImportUnifiedModal } from './components/WorkspaceImportDialogs'
+import { WorkspaceConfirmModal, WorkspaceInputModal } from './components/WorkspaceConfirmModal'
 import { buildTemplateContextFromAppState, runSingleRequestHttpPipeline } from './workspaceHttpPipeline'
 import { WorkspaceTopBar } from './components/WorkspaceTopBar'
 import { WorkspaceLeftSidebar } from './components/WorkspaceLeftSidebar'
@@ -32,6 +32,7 @@ import { WorkspaceScriptViewer } from './components/WorkspaceScriptViewer'
 import { WorkspaceAssistantPanel } from './components/WorkspaceAssistantPanel'
 import { WorkspaceReportingPanel } from './components/WorkspaceReportingPanel'
 import { WorkspaceDocsPanel } from './components/WorkspaceDocsPanel'
+import { CommandPalette } from './components/CommandPalette'
 
 function buildId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
@@ -81,11 +82,25 @@ export function WorkspaceApp(props: Props) {
   const [httpClientLogs, setHttpClientLogs] = useState<string[]>([])
   const [importCurlOpen, setImportCurlOpen] = useState(false)
   const [importCollectionOpen, setImportCollectionOpen] = useState(false)
+  const [importJmxOpen, setImportJmxOpen] = useState(false)
+  const [importHarOpen, setImportHarOpen] = useState(false)
+  const [importOpenApiOpen, setImportOpenApiOpen] = useState(false)
+  const [importPostmanOpen, setImportPostmanOpen] = useState(false)
+  const [importUnifiedOpen, setImportUnifiedOpen] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      return (localStorage.getItem('perfmix-theme') as 'dark' | 'light') ?? 'dark'
+    } catch { return 'dark' }
+  })
   const [removeRequestTarget, setRemoveRequestTarget] = useState<{ collectionId: string; requestId: string } | null>(null)
   const [removeCollectionTarget, setRemoveCollectionTarget] = useState<string | null>(null)
+  const [createCollectionModalOpen, setCreateCollectionModalOpen] = useState(false)
+  const [createProjectModalOpen, setCreateProjectModalOpen] = useState(false)
+  const [deleteAllModalOpen, setDeleteAllModalOpen] = useState(false)
   const [k6Output, setK6Output] = useState<{ at: string; runId: string | null; status: string; metrics: K6RunHistoryMetrics } | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const toastHideTimer = useRef<number | null>(null)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -123,10 +138,32 @@ export function WorkspaceApp(props: Props) {
     return () => window.clearInterval(timer)
   }, [props.onLoadDiagnostics])
 
+  // Global keyboard shortcut: Ctrl+K / Cmd+K → command palette
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setCommandPaletteOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   useEffect(() => {
     return () => {
       if (toastHideTimer.current) window.clearTimeout(toastHideTimer.current)
     }
+  }, [])
+
+  // Apply theme to root element
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    try { localStorage.setItem('perfmix-theme', theme) } catch { /* ignore */ }
+  }, [theme])
+
+  const handleThemeToggle = useCallback(() => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
   }, [])
 
   useEffect(() => {
@@ -258,8 +295,11 @@ export function WorkspaceApp(props: Props) {
 
   const createProject = () => {
     if (!data) return
-    const name = window.prompt('Project name?', 'New Project')?.trim()
-    if (!name) return
+    setCreateProjectModalOpen(true)
+  }
+
+  const handleCreateProjectConfirm = (name: string) => {
+    if (!data) return
     const p: Project = {
       id: buildId('proj'),
       name,
@@ -275,8 +315,11 @@ export function WorkspaceApp(props: Props) {
 
   const createCollection = () => {
     if (!project) return
-    const name = window.prompt('Collection name?', 'New Collection')?.trim()
-    if (!name) return
+    setCreateCollectionModalOpen(true)
+  }
+
+  const handleCreateCollectionConfirm = (name: string) => {
+    if (!project) return
     updateProject((draft) => {
       draft.collections.push({ id: buildId('col'), name, requests: [], variables: {} })
     })
@@ -373,8 +416,21 @@ export function WorkspaceApp(props: Props) {
     })
   }
 
+  const reorderRequests = (collectionId: string, newRequestIds: string[]) => {
+    updateProject((draft) => {
+      const col = draft.collections.find((c) => c.id === collectionId)
+      if (!col) return
+      const map = new Map(col.requests.map((r) => [r.id, r]))
+      const reordered = newRequestIds.map((id) => map.get(id)).filter(Boolean) as typeof col.requests
+      col.requests = reordered
+    })
+  }
+
   const deleteAllCollections = () => {
-    if (!window.confirm('Delete all collections and replace with one empty Default collection?')) return
+    setDeleteAllModalOpen(true)
+  }
+
+  const handleDeleteAllConfirm = () => {
     const newCol = { id: buildId('col'), name: 'Default', requests: [] as RequestDefinition[], variables: {} }
     updateProject((draft) => {
       draft.collections = [newCol]
@@ -739,6 +795,7 @@ export function WorkspaceApp(props: Props) {
       style={bottomHeight != null && !bottomCollapsed ? { gridTemplateRows: `auto 1fr auto ${bottomHeight}px` } : undefined}
     >
       <WorkspaceTopBar
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         username={props.username}
         projects={data.projects ?? []}
         activeProjectId={project.id}
@@ -764,7 +821,7 @@ export function WorkspaceApp(props: Props) {
               ? buildWorkspaceCollectionK6Script({ project, collection, activeEnvironment: data.environment, envVariables: data.envVariables, sharedVariables: data.sharedVariables, csvRows, runPurpose })
               : buildWorkspaceK6Script({ project, collection, request: request!, activeEnvironment: data.environment, envVariables: data.envVariables, sharedVariables: data.sharedVariables, csvRows, runPurpose })
           if (!freshScript.trim()) {
-            window.alert('No script generated — check that you have a valid request URL.')
+            showToast('No script generated — check that you have a valid request URL.')
             return
           }
           const blob = new Blob([freshScript], { type: 'text/javascript;charset=utf-8' })
@@ -804,6 +861,8 @@ export function WorkspaceApp(props: Props) {
         collectionLoadDuration={collection?.k6LoadDuration ?? '1m'}
         collectionLoadRampUp={collection?.k6LoadRampUp ?? '30s'}
         onCollectionLoadChange={(next) => patchActiveCollectionK6(next)}
+        theme={theme}
+        onThemeToggle={handleThemeToggle}
       />
 
       <div className="ws-body">
@@ -820,6 +879,11 @@ export function WorkspaceApp(props: Props) {
           onSendCollectionRequests={(id) => void sendCollectionHttp(id)}
           onOpenImportCurl={() => setImportCurlOpen(true)}
           onOpenImportCollection={() => setImportCollectionOpen(true)}
+          onOpenImportJmx={() => setImportJmxOpen(true)}
+          onOpenImportHar={() => setImportHarOpen(true)}
+          onOpenImportOpenApi={() => setImportOpenApiOpen(true)}
+          onOpenImportPostman={() => setImportPostmanOpen(true)}
+          onOpenImportUnified={() => setImportUnifiedOpen(true)}
           onExportCollectionJson={(collectionId) => {
             const col = project.collections.find((c) => c.id === collectionId)
             if (!col) return
@@ -837,6 +901,7 @@ export function WorkspaceApp(props: Props) {
           onDeleteCollection={(id) => setRemoveCollectionTarget(id)}
           onDeleteAllCollections={deleteAllCollections}
           onMoveRequest={moveRequest}
+          onReorderRequests={reorderRequests}
         />
 
         <section className="ws-center-wrap">
@@ -1024,6 +1089,50 @@ export function WorkspaceApp(props: Props) {
           showToast('Imported cURL request')
         }}
       />
+      <ImportJmxModal
+        open={importJmxOpen}
+        onClose={() => setImportJmxOpen(false)}
+        onConfirm={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast(`Imported ${newCol.requests.length} request${newCol.requests.length !== 1 ? 's' : ''} from JMX`)
+        }}
+      />
+
+      <ImportHarModal
+        open={importHarOpen}
+        onClose={() => setImportHarOpen(false)}
+        onConfirm={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast(`Imported ${newCol.requests.length} request${newCol.requests.length !== 1 ? 's' : ''} from HAR`)
+        }}
+      />
+
+      <ImportOpenApiModal
+        open={importOpenApiOpen}
+        onClose={() => setImportOpenApiOpen(false)}
+        onConfirm={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast(`Imported ${newCol.requests.length} endpoint${newCol.requests.length !== 1 ? 's' : ''} from OpenAPI spec`)
+        }}
+      />
+
+      <ImportPostmanModal
+        open={importPostmanOpen}
+        onClose={() => setImportPostmanOpen(false)}
+        onConfirm={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast(`Imported ${newCol.requests.length} request${newCol.requests.length !== 1 ? 's' : ''} from Postman collection`)
+        }}
+      />
+
       <ImportCollectionModal
         open={importCollectionOpen}
         onClose={() => setImportCollectionOpen(false)}
@@ -1036,6 +1145,102 @@ export function WorkspaceApp(props: Props) {
           showToast('Imported collection')
         }}
       />
+
+      {/* Unified import modal (opened from sidebar) */}
+      <ImportUnifiedModal
+        open={importUnifiedOpen}
+        collections={project?.collections ?? []}
+        defaultCollectionId={collection?.id ?? null}
+        onClose={() => setImportUnifiedOpen(false)}
+        onConfirmCurl={(collectionId, req) => {
+          updateProject((draft) => {
+            const col = draft.collections.find((c) => c.id === collectionId)
+            if (col) { col.requests.push(req) }
+            else if (draft.collections[0]) { draft.collections[0].requests.push(req) }
+          })
+          setActiveCollectionId(collectionId)
+          setActiveRequestId(req.id)
+          showToast('Imported cURL request')
+          setImportUnifiedOpen(false)
+        }}
+        onConfirmCollection={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast('Imported collection')
+          setImportUnifiedOpen(false)
+        }}
+        onConfirmJmx={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast(`Imported ${newCol.requests.length} requests from JMX`)
+          setImportUnifiedOpen(false)
+        }}
+        onConfirmHar={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast(`Imported ${newCol.requests.length} requests from HAR`)
+          setImportUnifiedOpen(false)
+        }}
+        onConfirmOpenApi={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast(`Imported ${newCol.requests.length} endpoints from OpenAPI`)
+          setImportUnifiedOpen(false)
+        }}
+        onConfirmPostman={(newCol) => {
+          updateProject((draft) => { draft.collections.push(newCol) })
+          setActiveCollectionId(newCol.id)
+          setActiveRequestId(newCol.requests[0]?.id ?? null)
+          showToast(`Imported ${newCol.requests.length} requests from Postman`)
+          setImportUnifiedOpen(false)
+        }}
+      />
+
+      {/* Create collection modal */}
+      <WorkspaceInputModal
+        open={createCollectionModalOpen}
+        titleId="ws-create-collection-title"
+        title="New collection"
+        label="Collection name"
+        placeholder="e.g. Auth API, Checkout flow…"
+        defaultValue="New Collection"
+        confirmLabel="Create"
+        onClose={() => setCreateCollectionModalOpen(false)}
+        onConfirm={handleCreateCollectionConfirm}
+      />
+
+      {/* Create project modal */}
+      <WorkspaceInputModal
+        open={createProjectModalOpen}
+        titleId="ws-create-project-title"
+        title="New project"
+        label="Project name"
+        placeholder="e.g. My API Project"
+        defaultValue="New Project"
+        confirmLabel="Create"
+        onClose={() => setCreateProjectModalOpen(false)}
+        onConfirm={handleCreateProjectConfirm}
+      />
+
+      {/* Delete all collections confirm */}
+      <WorkspaceConfirmModal
+        open={deleteAllModalOpen}
+        titleId="ws-delete-all-title"
+        title="Reset all collections?"
+        confirmLabel="Reset collections"
+        danger
+        onClose={() => setDeleteAllModalOpen(false)}
+        onConfirm={handleDeleteAllConfirm}
+      >
+        <p style={{ margin: 0, lineHeight: 1.5 }}>
+          All collections and their requests will be replaced with one empty <strong>Default</strong> collection.
+        </p>
+        <p className="muted" style={{ margin: '10px 0 0' }}>This cannot be undone.</p>
+      </WorkspaceConfirmModal>
 
       <WorkspaceConfirmModal
         open={!!removeRequestTarget}
@@ -1082,6 +1287,54 @@ export function WorkspaceApp(props: Props) {
       </WorkspaceConfirmModal>
 
       {toastMessage ? <div className="ws-toast">{toastMessage}</div> : null}
+
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        project={project}
+        onSelectRequest={(collectionId, requestId) => {
+          setActiveCollectionId(collectionId)
+          setActiveRequestId(requestId)
+          setMainTab('builder')
+        }}
+        onSelectCollection={(collectionId) => {
+          setActiveCollectionId(collectionId)
+        }}
+        onCreateRequest={createRequest}
+        onCreateCollection={createCollection}
+        onRun={() => void run()}
+        onExport={() => {
+          if (!collection) return
+          flushRegenerate()
+          const csvRows = data.csvRows ?? project.csvRows ?? []
+          const freshScript =
+            exportTarget === 'collection'
+              ? buildWorkspaceCollectionK6Script({ project, collection, activeEnvironment: data.environment, envVariables: data.envVariables, sharedVariables: data.sharedVariables, csvRows, runPurpose })
+              : buildWorkspaceK6Script({ project, collection, request: request!, activeEnvironment: data.environment, envVariables: data.envVariables, sharedVariables: data.sharedVariables, csvRows, runPurpose })
+          if (!freshScript.trim()) return
+          const blob = new Blob([freshScript], { type: 'text/javascript;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${project.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.k6.js`
+          a.click()
+          URL.revokeObjectURL(url)
+          showToast('Downloaded k6 script')
+        }}
+        onExportCurl={() => {
+          if (!collection) return
+          const text = exportTarget === 'collection' ? collectionToCurlSh(collection) : (request ? requestToCurl(request) : '')
+          if (!text) return
+          const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${project.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.curl.sh`
+          a.click()
+          URL.revokeObjectURL(url)
+          showToast('Exported cURL')
+        }}
+      />
     </div>
   )
 }

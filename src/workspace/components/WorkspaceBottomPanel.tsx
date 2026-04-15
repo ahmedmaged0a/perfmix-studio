@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { ChevronUp, ChevronDown, Square, Trash2, Activity, ScrollText, Search, Copy, CheckCheck, X } from 'lucide-react'
 import type { HttpOutputPayload, K6RunHistoryMetrics, K6RunStatus, RuntimeDiagnostics } from '../../models/types'
 import { WorkspaceOutputPanel } from './WorkspaceOutputPanel'
+import { WorkspaceLiveMetrics } from './WorkspaceLiveMetrics'
 
 type BottomTab = 'output' | 'logs'
 
@@ -20,7 +22,6 @@ type Props = {
   lastRunStatus: K6RunStatus | 'idle'
   lastRunId: string | null
   logs: string[]
-  /** In-app HTTP script console lines (prepended in the Logs tab). */
   httpClientLogs?: string[]
   httpOutput: HttpOutputPayload | null
   k6Output: K6Payload | null
@@ -31,10 +32,28 @@ type Props = {
   onClearOutput: () => void
 }
 
+/** Colorize a log line by severity keywords */
+function logLineClass(line: string): string {
+  const l = line.toLowerCase()
+  if (l.includes('error') || l.includes('fatal') || l.includes('fail')) return 'log-error'
+  if (l.includes('warn')) return 'log-warn'
+  if (l.includes('info') || l.includes('running') || l.includes('done') || l.includes('pass')) return 'log-info'
+  return ''
+}
+
 export function WorkspaceBottomPanel(props: Props) {
   const logsEndRef = useRef<HTMLDivElement>(null)
   const logsContainerRef = useRef<HTMLPreElement>(null)
   const wasAtBottom = useRef(true)
+  const [logSearch, setLogSearch] = useState('')
+  const [copiedLogs, setCopiedLogs] = useState(false)
+
+  const copyAllLogs = useCallback((lines: string[]) => {
+    void navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopiedLogs(true)
+      setTimeout(() => setCopiedLogs(false), 1500)
+    })
+  }, [])
 
   useEffect(() => {
     if (props.bottomTab !== 'logs') return
@@ -60,12 +79,23 @@ export function WorkspaceBottomPanel(props: Props) {
       : 'fail'
 
   const healthLabel = !props.diagnostics
-    ? 'Checking runtime'
+    ? 'Checking runtime…'
     : props.diagnostics.canExecute && props.diagnostics.runsDirWritable
       ? props.diagnostics.mode === 'bundled'
-        ? 'Runtime healthy'
-        : 'Runtime fallback'
-      : 'Runtime issue'
+        ? 'k6 ready'
+        : 'k6 via PATH'
+      : 'k6 not found'
+
+  const healthTitle = !props.diagnostics
+    ? 'Checking if the bundled k6 binary is available'
+    : props.diagnostics.canExecute && props.diagnostics.runsDirWritable
+      ? props.diagnostics.mode === 'bundled'
+        ? 'Bundled k6 binary is available and the runs directory is writable'
+        : 'Using system k6 from PATH (bundled binary not found)'
+      : 'k6 binary not found — load tests cannot run. Check the docs to install k6.'
+
+  const allLogs = [...(props.httpClientLogs ?? []), ...props.logs]
+  const logCount = allLogs.length
 
   return (
     <footer className={`ws-bottom${props.collapsed ? ' collapsed' : ''}`}>
@@ -73,58 +103,169 @@ export function WorkspaceBottomPanel(props: Props) {
         <div className="ws-bottom-tabs">
           <button
             type="button"
-            className="ws-btn-icon"
+            className="ws-btn-icon ws-bottom-collapse-btn"
             title={props.collapsed ? 'Expand panel' : 'Collapse panel'}
             onClick={props.onToggleCollapse}
-            style={{ fontSize: '0.85rem', marginRight: 4 }}
           >
-            {props.collapsed ? '▲' : '▼'}
+            {props.collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
-          <button type="button" className={props.bottomTab === 'output' ? 'ws-bottom-tab active' : 'ws-bottom-tab'} onClick={() => { if (props.collapsed) props.onToggleCollapse(); props.onBottomTab('output') }}>
-            Request output
+
+          <button
+            type="button"
+            className={props.bottomTab === 'output' ? 'ws-bottom-tab active' : 'ws-bottom-tab'}
+            onClick={() => {
+              if (props.collapsed) props.onToggleCollapse()
+              props.onBottomTab('output')
+            }}
+          >
+            <Activity size={13} style={{ marginRight: 5 }} />
+            Output
           </button>
-          <button type="button" className={props.bottomTab === 'logs' ? 'ws-bottom-tab active' : 'ws-bottom-tab'} onClick={() => { if (props.collapsed) props.onToggleCollapse(); props.onBottomTab('logs') }}>
+
+          <button
+            type="button"
+            className={props.bottomTab === 'logs' ? 'ws-bottom-tab active' : 'ws-bottom-tab'}
+            onClick={() => {
+              if (props.collapsed) props.onToggleCollapse()
+              props.onBottomTab('logs')
+            }}
+          >
+            <ScrollText size={13} style={{ marginRight: 5 }} />
             Logs
-            {(props.httpClientLogs?.length ?? 0) + props.logs.length > 0
-              ? ` (${(props.httpClientLogs?.length ?? 0) + props.logs.length})`
-              : ''}
+            {logCount > 0 ? (
+              <span className="ws-bottom-tab-badge">{logCount > 999 ? '999+' : logCount}</span>
+            ) : null}
           </button>
         </div>
 
         <div className="ws-bottom-meta">
-          <span className={`health-badge health-${healthTone}`}>{healthLabel}</span>
+          <span
+            className={`health-badge health-${healthTone}`}
+            title={healthTitle}
+          >
+            {healthLabel}
+          </span>
+
           {isRunning ? (
-            <button type="button" className="ws-btn stop" onClick={props.onStop} style={{ padding: '4px 10px', fontSize: '0.82rem' }}>
+            <button
+              type="button"
+              className="ws-btn stop"
+              title="Stop the running k6 test"
+              onClick={props.onStop}
+            >
+              <Square size={12} fill="currentColor" style={{ marginRight: 4 }} />
               Stop
             </button>
           ) : null}
-          <button type="button" className="ws-btn ghost" style={{ padding: '4px 10px', fontSize: '0.82rem' }} onClick={props.onClearOutput}>
+
+          <button
+            type="button"
+            className="ws-btn ghost ws-btn--sm"
+            title="Clear request/response output"
+            onClick={props.onClearOutput}
+          >
+            <Trash2 size={12} style={{ marginRight: 4 }} />
             Clear output
           </button>
-          <button type="button" className="ws-btn ghost" style={{ padding: '4px 10px', fontSize: '0.82rem' }} onClick={props.onClearLogs}>
+          <button
+            type="button"
+            className="ws-btn ghost ws-btn--sm"
+            title="Clear log lines"
+            onClick={props.onClearLogs}
+          >
+            <Trash2 size={12} style={{ marginRight: 4 }} />
             Clear logs
           </button>
-          <span className="muted">
-            Run: <span className="mono">{props.lastRunId ?? '—'}</span>
+
+          {props.lastRunId ? (
+            <span className="muted ws-bottom-run-id" title={`Run ID: ${props.lastRunId}`}>
+              Run: <span className="mono">{props.lastRunId}</span>
+            </span>
+          ) : null}
+
+          <span
+            className={`ws-run-status-badge ws-run-status--${props.lastRunStatus}`}
+            title={`k6 run status: ${props.lastRunStatus}`}
+          >
+            {props.lastRunStatus}
           </span>
-          <span className="muted">
-            Status: <span className="mono">{props.lastRunStatus}</span>
-          </span>
-          <label className="ws-inline">
-            <span className="muted">Verbose logs</span>
-            <input type="checkbox" checked={props.verbose} onChange={(e) => props.onVerboseChange(e.target.checked)} />
+
+          <label className="ws-inline" title="Show verbose HTTP and script logs in the Logs tab">
+            <span className="muted">Verbose</span>
+            <input
+              type="checkbox"
+              checked={props.verbose}
+              onChange={(e) => props.onVerboseChange(e.target.checked)}
+            />
           </label>
         </div>
       </div>
 
       {!props.collapsed ? (
         props.bottomTab === 'output' ? (
-          <WorkspaceOutputPanel http={props.httpOutput} k6={props.k6Output} />
+          <div className="ws-output-wrap">
+            {(isRunning || props.lastRunStatus === 'passed' || props.lastRunStatus === 'failed') ? (
+              <WorkspaceLiveMetrics
+                logs={props.logs}
+                status={props.lastRunStatus}
+                runId={props.lastRunId}
+              />
+            ) : null}
+            <WorkspaceOutputPanel http={props.httpOutput} k6={props.k6Output} />
+          </div>
         ) : (
-          <pre className="ws-logs" ref={logsContainerRef} onScroll={handleLogsScroll}>
-            {[...(props.httpClientLogs ?? []), ...props.logs].join('\n')}
-            <div ref={logsEndRef} />
-          </pre>
+          <div className="ws-logs-wrap">
+            {/* Log toolbar */}
+            <div className="ws-logs-toolbar">
+              <div className="ws-logs-search">
+                <Search size={12} className="ws-logs-search-icon" />
+                <input
+                  className="ws-logs-search-input"
+                  placeholder="Filter logs…"
+                  value={logSearch}
+                  onChange={(e) => setLogSearch(e.target.value)}
+                />
+                {logSearch ? (
+                  <button className="ws-logs-search-clear" onClick={() => setLogSearch('')} title="Clear filter">
+                    <X size={11} />
+                  </button>
+                ) : null}
+              </div>
+              <button
+                className="ws-btn ghost ws-btn--sm"
+                title="Copy all log lines to clipboard"
+                onClick={() => copyAllLogs(allLogs)}
+                disabled={allLogs.length === 0}
+              >
+                {copiedLogs ? <CheckCheck size={12} style={{ marginRight: 4 }} /> : <Copy size={12} style={{ marginRight: 4 }} />}
+                {copiedLogs ? 'Copied!' : 'Copy all'}
+              </button>
+            </div>
+
+            {/* Log lines */}
+            <pre className="ws-logs" ref={logsContainerRef} onScroll={handleLogsScroll}>
+              {(() => {
+                const filtered = logSearch.trim()
+                  ? allLogs.filter((l) => l.toLowerCase().includes(logSearch.toLowerCase()))
+                  : allLogs
+                if (filtered.length === 0) {
+                  return (
+                    <span className="muted" style={{ padding: '12px 16px', display: 'block', fontFamily: 'inherit' }}>
+                      {allLogs.length === 0
+                        ? 'No logs yet. Send a request or run a load test to see output here.'
+                        : `No lines match "${logSearch}"`}
+                    </span>
+                  )
+                }
+                return filtered.map((line, i) => (
+                  <span key={i} className={`ws-log-line ${logLineClass(line)}`}>
+                    {line}{'\n'}
+                  </span>
+                ))
+              })()}
+              <div ref={logsEndRef} />
+            </pre>
+          </div>
         )
       ) : null}
     </footer>

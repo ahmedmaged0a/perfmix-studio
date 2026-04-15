@@ -167,7 +167,8 @@ export function WorkspaceReportPanel(props: Props) {
     if (!props.runId) return
     const html = await tauriReadRunReportHtml(props.runId)
     if (!html) {
-      window.alert('HTML report is not available in this runtime yet.')
+      // HTML report not available — silently return (feature not yet implemented)
+      console.info('HTML report not available in this runtime.')
       return
     }
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
