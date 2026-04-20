@@ -1,0 +1,40 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "PerfMix Studio",
+  "version": "1.0.0",
+  "identifier": "com.perfmix.studio",
+
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+
+  "app": {
+    "windows": [
+      {
+        "title": "PerfMix Studio",
+        "width": 800,
+        "height": 600,
+        "resizable": true      }
+    ]
+  },
+
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "resources/k6/*"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
+
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}

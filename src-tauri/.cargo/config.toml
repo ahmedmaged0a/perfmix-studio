@@ -1,0 +1,8 @@
+# Caps parallel rustc jobs; raising can speed builds if you have enough RAM.
+[build]
+jobs = 1
+
+# Huge deps (`windows`, LLVM): lower peak RAM during rustc analysis/codegen on memory-tight machines.
+[env]
+RUST_MIN_STACK = "536870912"
+RAYON_NUM_THREADS = "1"
