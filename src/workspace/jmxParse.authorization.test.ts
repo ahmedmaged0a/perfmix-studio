@@ -37,4 +37,16 @@ describe('normalizeImportedAuthorizationBearer', () => {
     normalizeImportedAuthorizationBearer(h)
     expect(h).toEqual({ 'Content-Type': 'application/json' })
   })
+
+  it('removes literal null Authorization (would otherwise become Bearer null)', () => {
+    const h: Record<string, string> = { authorization: 'null' }
+    normalizeImportedAuthorizationBearer(h)
+    expect(h).toEqual({})
+  })
+
+  it('removes Bearer null', () => {
+    const h: Record<string, string> = { Authorization: 'Bearer null' }
+    normalizeImportedAuthorizationBearer(h)
+    expect(h).toEqual({})
+  })
 })

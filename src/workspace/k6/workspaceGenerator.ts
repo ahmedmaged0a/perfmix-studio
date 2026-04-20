@@ -43,7 +43,6 @@ function mapRequestToLegacy(collectionName: string, request: RequestDefinition) 
     assertions: request.assertions,
     excludeFromAggregateReport: request.excludeFromAggregateReport,
     jmeterThreadGroupKind: request.jmeterThreadGroupKind,
-    k6ScenarioIteration: request.k6ScenarioIteration,
   }
 }
 

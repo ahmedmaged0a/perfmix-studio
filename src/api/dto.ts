@@ -13,8 +13,6 @@ export type ApiRequestDto = {
   headers: string
   body: string
   test_cases: RequestTestCaseDto[]
-  /** Sequential journey k6 export: iteration guard for this step. */
-  k6_scenario_iteration?: number | null
 }
 
 export type RequestTestCaseDto = {

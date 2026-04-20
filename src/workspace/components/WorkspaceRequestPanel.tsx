@@ -152,37 +152,32 @@ export function WorkspaceRequestPanel(props: Props) {
           <p className="ws-k6-report-banner-hint muted">
             The request still runs in the generated script and keeps its place in the list order above. Only summary rollups ignore it.
           </p>
-          <label className="ws-testcase-field" style={{ marginTop: 12, maxWidth: 420 }}>
-            <span className="ws-testcase-field-label">Run on scenario iteration (k6)</span>
-            <input
-              className="ws-input"
-              type="number"
-              min={1}
-              step={1}
-              value={
-                request.k6ScenarioIteration != null && Number.isFinite(request.k6ScenarioIteration)
-                  ? request.k6ScenarioIteration
-                  : ''
-              }
-              placeholder="Every iteration"
-              title="Sequential collection export only"
-              onChange={(e) => {
-                const raw = e.target.value.trim()
-                if (raw === '') {
-                  props.onChangeRequest({ k6ScenarioIteration: null })
-                  return
-                }
-                const n = Math.floor(Number(raw))
-                if (!Number.isFinite(n) || n < 1) return
-                props.onChangeRequest({ k6ScenarioIteration: n })
-              }}
-            />
-            <p className="muted" style={{ marginTop: 6, fontSize: 12, lineHeight: 1.35 }}>
-              Only used when the collection runs as a <strong>sequential journey</strong>. Set to <code>1</code> to run this
-              step only on each VU&apos;s first lap (<code>exec.scenario.iterationInTest === 1</code>). Leave empty for every
-              lap.
+          {request.jmeterThreadGroupKind === 'teardown' ? (
+            <p className="muted" style={{ marginTop: 12, fontSize: 12, lineHeight: 1.35 }}>
+              <strong>Teardown</strong> (from JMX PostThreadGroup). This phase is excluded from the main k6 loop; full
+              teardown parity is not generated yet.
             </p>
-          </label>
+          ) : (
+            <>
+              <label className="ws-k6-report-banner-checkbox" style={{ marginTop: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={request.jmeterThreadGroupKind === 'setup'}
+                  onChange={(e) =>
+                    props.onChangeRequest({
+                      jmeterThreadGroupKind: e.target.checked ? 'setup' : undefined,
+                    })
+                  }
+                />
+                <span>Run once in k6 setup (before VU iterations)</span>
+              </label>
+              <p className="muted" style={{ marginTop: 6, fontSize: 12, lineHeight: 1.35 }}>
+                When checked, this request is emitted inside <code>export function setup()</code> for a <strong>sequential journey</strong>{' '}
+                export (with other non-setup requests in the per-iteration loop). Unchecked means the normal main journey
+                (every iteration). Parallel collection export does not split setup — use sequential if you rely on this.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="ws-subtabs">

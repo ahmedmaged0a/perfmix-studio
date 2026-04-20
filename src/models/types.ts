@@ -26,11 +26,6 @@ export type ApiRequestItem = {
   excludeFromAggregateReport?: boolean
   /** Set on JMX import from SetupThreadGroup / ThreadGroup / PostThreadGroup. */
   jmeterThreadGroupKind?: JmeterThreadGroupKind
-  /**
-   * Sequential collection export only: run this request only when `exec.scenario.iterationInTest === N`.
-   * Omit for every iteration.
-   */
-  k6ScenarioIteration?: number | null
 }
 
 export type PerfCriteria = {
@@ -224,11 +219,6 @@ export type RequestDefinition = {
   excludeFromAggregateReport?: boolean
   /** JMX thread group phase — sequential k6 can emit `setup()` once for `setup` requests. */
   jmeterThreadGroupKind?: JmeterThreadGroupKind
-  /**
-   * Sequential collection export: run this request only when `exec.scenario.iterationInTest === N`.
-   * Omit or unset for every iteration.
-   */
-  k6ScenarioIteration?: number | null
 }
 
 /** Set by JMX import when the plan used an HTTP Cookie Manager (sequential k6 may enable jar). */

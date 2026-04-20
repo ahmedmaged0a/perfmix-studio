@@ -40,11 +40,6 @@ export function fromAppDataDto(dto: AppDataDto): AppData {
         maxP95Ms: tc.max_p95_ms,
         maxErrorRate: tc.max_error_rate,
       })),
-      ...(typeof item.k6_scenario_iteration === 'number'
-        ? { k6ScenarioIteration: item.k6_scenario_iteration }
-        : item.k6_scenario_iteration === null
-          ? { k6ScenarioIteration: null }
-          : {}),
     })),
     scenarios: dto.scenarios.map((item) => ({
       id: item.id,
@@ -116,11 +111,6 @@ export function toAppDataDto(data: AppData): AppDataDto {
         max_p95_ms: tc.maxP95Ms,
         max_error_rate: tc.maxErrorRate,
       })),
-      ...(typeof item.k6ScenarioIteration === 'number'
-        ? { k6_scenario_iteration: item.k6ScenarioIteration }
-        : item.k6ScenarioIteration === null
-          ? { k6_scenario_iteration: null }
-          : {}),
     })),
     scenarios: data.scenarios.map((item) => ({
       id: item.id,

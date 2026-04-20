@@ -36,21 +36,6 @@ function rampDownDurJs(fallbackRd: string): string {
   return `(String(__ENV.PERFMIX_LOAD_RAMP_DOWN ?? '').trim() || ${JSON.stringify(fallbackRd)})`
 }
 
-function indentLines(block: string, prefix: string): string {
-  return block
-    .split('\n')
-    .map((line) => (line.trim() === '' ? '' : prefix + line))
-    .join('\n')
-}
-
-/** Sequential journey: guard a step block for iteration N only (exec from k6/execution). */
-function wrapSequentialStepForIteration(block: string, iteration: number | null | undefined): string {
-  if (iteration == null) return block
-  const n = Number(iteration)
-  if (!Number.isInteger(n) || n < 1) return block
-  return `if (exec.scenario.iterationInTest === ${n}) {\n${indentLines(block, '  ')}\n}`
-}
-
 function perfMixCliEnvComment(): string {
   return `/* CLI load overrides (optional — unset uses embedded PerfMix values):
  *   Sequential journey: PERFMIX_COLLECTION_DURATION, PERFMIX_COLLECTION_VUS
@@ -242,7 +227,13 @@ function thinkTimeMsForRequest(req: ApiRequestItem, fallbackMs: number) {
   return fallbackMs
 }
 
-function buildHttpCall(req: ApiRequestItem, index: number, useJar = false) {
+function isKeycloakAuthenticatePost(req: ApiRequestItem): boolean {
+  const m = req.method.toLowerCase()
+  if (m !== 'post' && m !== 'put' && m !== 'patch') return false
+  return /login-actions\/authenticate/i.test(req.url)
+}
+
+function buildHttpCall(req: ApiRequestItem, index: number, useJar = false, keycloakAuthRuntimeExpr: string | null = null) {
   const method = req.method.toLowerCase()
   const headersExpr = buildHeadersObject(req.headers)
   const checksExpr = buildAssertionChecks(req.assertions, req.name)
@@ -259,7 +250,13 @@ function buildHttpCall(req: ApiRequestItem, index: number, useJar = false) {
   }
 
   const bodyRaw = req.body?.trim() ?? ''
-  const bodyExpr = bodyRaw ? `tmpl(${JSON.stringify(bodyRaw)})` : 'null'
+  let bodyExpr: string
+  if (keycloakAuthRuntimeExpr && isKeycloakAuthenticatePost(req)) {
+    const baseTmpl = bodyRaw ? `tmpl(${JSON.stringify(bodyRaw)})` : `''`
+    bodyExpr = `perfMixKeycloakAuthPostBody(${baseTmpl}, ${keycloakAuthRuntimeExpr})`
+  } else {
+    bodyExpr = bodyRaw ? `tmpl(${JSON.stringify(bodyRaw)})` : 'null'
+  }
   return `  // Step ${index + 1}: ${req.name}
   const url${index} = tmpl(${JSON.stringify(req.url)});
   const res${index} = http.${method}(url${index}, ${bodyExpr}, { headers: ${headersExpr}, tags: ${tagsExpr}${jarOpt}${redirectOpt} });
@@ -384,6 +381,34 @@ function keycloakExecutionHelperDefinition(): string {
   ].join('\n')
 }
 
+/** Merge Keycloak hidden form fields from RUNTIME after tmpl() — JMeter often records only username/password. */
+function keycloakAuthPostBodyHelperDefinition(): string {
+  return [
+    'function perfMixKeycloakAuthPostBody(base, rt) {',
+    '  try {',
+    "    const s0 = String(base == null ? '' : base);",
+    "    const parts = [];",
+    "    const exec = String(rt && rt.execution != null ? rt.execution : '').trim();",
+    '    if (!/(?:^|&)execution=/i.test(s0) && exec && exec !== \'execution\') {',
+    "      parts.push('execution=' + encodeURIComponent(exec));",
+    '    }',
+    "    const sc = String(rt && (rt.session_code != null && rt.session_code !== '') ? rt.session_code : (rt.sessionCode != null ? rt.sessionCode : '')).trim();",
+    '    if (!/(?:^|&)session_code=/i.test(s0) && sc) {',
+    "      parts.push('session_code=' + encodeURIComponent(sc));",
+    '    }',
+    "    const tab = String(rt && (rt.tab_id != null && rt.tab_id !== '') ? rt.tab_id : (rt.tab_Id != null ? rt.tab_Id : '')).trim();",
+    '    if (!/(?:^|&)tab_id=/i.test(s0) && tab) {',
+    "      parts.push('tab_id=' + encodeURIComponent(tab));",
+    '    }',
+    '    if (!parts.length) return s0;',
+    "    const t = s0.trim();",
+    "    const sep = t ? '&' : '';",
+    "    return t + sep + parts.join('&');",
+    "  } catch (e) { return String(base == null ? '' : base); }",
+    '}',
+  ].join('\n')
+}
+
 function buildCorrelationDebugAfterExtracts(
   extracts: CorrelationRule[],
   stepLabel: string,
@@ -432,7 +457,9 @@ function buildSequentialDefaultBody(
   requests.forEach((req, i) => {
     const idx = i + 1
     const stepChunks: string[] = []
-    stepChunks.push(buildHttpCall(req, idx, useCookieJar))
+    stepChunks.push(
+      buildHttpCall(req, idx, useCookieJar, includeKeycloakExecutionFallback ? keycloakRuntimeExpr : null),
+    )
     const extracts = rulesByRequest.get(req.id) ?? []
     for (const rule of extracts) {
       stepChunks.push(buildExtractionSnippet(rule, idx, allRulesForSnippetOwnership, req.url))
@@ -449,7 +476,7 @@ function buildSequentialDefaultBody(
       stepChunks.push(`  sleep(${sleepMs / 1000});`)
     }
     const stepBlock = stepChunks.join('\n')
-    parts.push(wrapSequentialStepForIteration(stepBlock, req.k6ScenarioIteration))
+    parts.push(stepBlock)
   })
   return parts.join('\n')
 }
@@ -728,22 +755,25 @@ export function buildK6Script(params: BuildK6Params): string {
   const mainRequests = requests.filter(
     (r) => r.jmeterThreadGroupKind !== 'setup' && r.jmeterThreadGroupKind !== 'teardown',
   )
-  const usesJmxSetupPhase =
-    isCollectionSequential &&
-    needsRuntimeBlock &&
-    setupRequests.length > 0 &&
-    mainRequests.length > 0
+  const usesK6SetupPhase =
+    isCollectionSequential && setupRequests.length > 0 && mainRequests.length > 0
+
+  /** Emit module-level RUNTIME when extractors/Keycloak exist, or whenever setup() merges into default. */
+  const needsModuleRuntime = needsRuntimeBlock || usesK6SetupPhase
 
   const setupRequestIdSet = new Set(setupRequests.map((r) => r.id))
   const correlationRulesSetup = scopedCorrelationRules.filter((r) => setupRequestIdSet.has(r.fromRequestId))
   const correlationRulesMain = scopedCorrelationRules.filter((r) => !setupRequestIdSet.has(r.fromRequestId))
 
-  const keycloakPrelude =
-    isCollectionSequential && collectionUsesKeycloakLoginFlow ? keycloakExecutionHelperDefinition() : ''
+  const keycloakPrelude = isCollectionSequential && collectionUsesKeycloakLoginFlow ? keycloakExecutionHelperDefinition() : ''
 
-  const runtimePrelude = needsRuntimeBlock ? buildRuntimeObjectBlock('RUNTIME', correlationDebugOn) : ''
+  const runtimePrelude = needsModuleRuntime
+    ? `${buildRuntimeObjectBlock('RUNTIME', correlationDebugOn)}${
+        needsRuntimeBlock ? `\n\n${keycloakAuthPostBodyHelperDefinition()}` : ''
+      }`
+    : ''
 
-  const resolveVarBody = needsRuntimeBlock
+  const resolveVarBody = needsModuleRuntime
     ? `  if (Object.prototype.hasOwnProperty.call(RUNTIME, name)) return RUNTIME[name];
 ${resolveVarEnvTail}`
     : `  const envMap = ENVIRONMENTS[ACTIVE_ENV] || {};
@@ -753,7 +783,7 @@ ${resolveVarEnvTail}`
   if (Object.prototype.hasOwnProperty.call(SHARED, name)) return SHARED[name];
   return \`\${name}\`;`
 
-  const setupJourney = usesJmxSetupPhase
+  const setupJourney = usesK6SetupPhase
     ? buildSequentialDefaultBody(
         setupRequests,
         scenario?.thinkTimeMs ?? 0,
@@ -768,7 +798,7 @@ ${resolveVarEnvTail}`
       )
     : ''
 
-  const mainJourney = usesJmxSetupPhase
+  const mainJourney = usesK6SetupPhase
     ? buildSequentialDefaultBody(
         mainRequests,
         scenario?.thinkTimeMs ?? 0,
@@ -783,8 +813,8 @@ ${resolveVarEnvTail}`
       )
     : ''
 
-  const setupExportBlock = usesJmxSetupPhase
-    ? `// JMeter parity: SetupThreadGroup runs once per test. k6 setup() cannot pass a live http.cookieJar() to VUs — merge setupRuntime into RUNTIME for bearer/header flows; opaque cookies may still differ from JMeter.
+  const setupExportBlock = usesK6SetupPhase
+    ? `// Requests marked setup (JMX SetupThreadGroup or UI) run once in k6 setup(). setup() cannot pass a live http.cookieJar() to VUs — merge setupRuntime into RUNTIME for bearer/header flows; opaque cookies may still differ from JMeter.
 export function setup() {
 ${indentTextBlock(buildRuntimeObjectBlock('__perfMixSetupRt', correlationDebugOn), '  ')}
 
@@ -808,7 +838,7 @@ ${setupJourney}
     : ''
 
   const defaultFunctionBody = isCollectionSequential
-    ? usesJmxSetupPhase
+    ? usesK6SetupPhase
       ? mainJourney
       : buildSequentialDefaultBody(
           requests,
@@ -861,7 +891,14 @@ ${setupJourney}
         return lines.join('\n')
       })()
 
-  return `/*
+  const setupPhaseParallelWarn =
+    !isCollectionSequential &&
+    params.mode === 'collection' &&
+    requests.some((r) => r.jmeterThreadGroupKind === 'setup')
+      ? '// NOTE: This collection has setup-phase requests but export mode is parallel — k6 setup() is not emitted; setup requests are included like other parallel scenarios.\n\n'
+      : ''
+
+  return `${setupPhaseParallelWarn}/*
  * Generated by PerfMix Studio
  *
  * HOW TO RUN FROM TERMINAL:
@@ -921,8 +958,8 @@ ${scenarioBlock}
   },
 };
 
-export default function ${usesJmxSetupPhase ? '(data)' : '()'} {
-${usesJmxSetupPhase ? '  Object.assign(RUNTIME, (data && data.setupRuntime) || {});\n' : ''}  // Lightweight variable + data-driven substitution (MVP).
+export default function ${usesK6SetupPhase ? '(data)' : '()'} {
+${usesK6SetupPhase ? '  Object.assign(RUNTIME, (data && data.setupRuntime) || {});\n' : ''}  // Lightweight variable + data-driven substitution (MVP).
   globalThis.__vars = new Proxy(
     {},
     {

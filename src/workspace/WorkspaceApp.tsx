@@ -553,7 +553,12 @@ export function WorkspaceApp(props: Props) {
       const col = draft.collections.find((c) => c.id === collection.id)
       const r = col?.requests.find((x) => x.id === request.id)
       if (!r) return
-      Object.assign(r, patch)
+      const row = r as Record<string, unknown>
+      for (const key of Object.keys(patch) as (keyof RequestDefinition)[]) {
+        const v = patch[key]
+        if (v === undefined) delete row[key as string]
+        else row[key as string] = v
+      }
     })
   }
 

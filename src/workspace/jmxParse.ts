@@ -130,6 +130,14 @@ export function normalizeImportedAuthorizationBearer(headers: Record<string, str
   if (!authKey) return
   const raw = String(headers[authKey] ?? '').trim()
   if (!raw) return
+  if (/^(null|undefined)$/i.test(raw)) {
+    delete headers[authKey]
+    return
+  }
+  if (/^Bearer\s+(null|undefined)$/i.test(raw)) {
+    delete headers[authKey]
+    return
+  }
   if (/^(Bearer|Basic|Digest)\s+/i.test(raw)) return
   if (LONE_PERF_MIX_PLACEHOLDER_AUTHZ.test(raw)) return
   headers[authKey] = `Bearer ${raw}`
@@ -689,6 +697,25 @@ function applyKeycloakExecutionRewrite(
     req.url = req.url.split(`execution=${uuid}`).join('execution={{execution}}')
     warnings.push(
       `Keycloak: replaced static execution id in "${req.name}" with {{execution}} and ensured extract rules on "${authReq.name}".`,
+    )
+  }
+}
+
+/**
+ * Keycloak login POST must include hidden `execution` (from prior /auth HTML). JMeter recordings often
+ * keep only username/password in the sampler body — add a template placeholder so Send + k6 resolve it.
+ */
+function applyKeycloakAuthenticateBodyExecutionPlaceholder(requests: RequestDefinition[], warnings: string[]) {
+  for (const req of requests) {
+    if (!/login-actions\/authenticate/i.test(req.url)) continue
+    if (req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'PATCH') continue
+    const b = (req.bodyText ?? '').trim()
+    if (!b) continue
+    if (/(?:^|&)execution=/i.test(b)) continue
+    if (!/(?:^|&)username=/i.test(b) && !/(?:^|&)password=/i.test(b)) continue
+    req.bodyText = b.endsWith('&') ? `${b}execution={{execution}}` : `${b}&execution={{execution}}`
+    warnings.push(
+      `Keycloak: appended execution={{execution}} to the form body of "${req.name}" so browser login replay matches Keycloak.`,
     )
   }
 }
@@ -1293,6 +1320,7 @@ export function parseJmx(xmlText: string, options?: JmxParseOptions): JmxParseRe
   }
 
   applyKeycloakExecutionRewrite(requests, correlationRules, warnings)
+  applyKeycloakAuthenticateBodyExecutionPlaceholder(requests, warnings)
   applyKeycloakRedirectUriAlignment(requests, warnings)
 
   for (const [k, v] of pDefaults.entries()) {

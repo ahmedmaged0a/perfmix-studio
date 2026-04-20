@@ -109,14 +109,29 @@ describe('buildK6Script load controls', () => {
     expect(script).toContain('Math.max(1, parseInt(String(__ENV.PERFMIX_COLLECTION_VUS')
   })
 
-  it('sequential journey wraps steps when k6ScenarioIteration is set', () => {
+  it('sequential Keycloak journey wraps authenticate POST with perfMixKeycloakAuthPostBody', () => {
     const script = buildK6Script({
       mode: 'collection',
-      selectedRequestId: 'r1',
-      requests: [baseReq({ k6ScenarioIteration: 1 })],
+      selectedRequestId: 'a',
+      requests: [
+        baseReq({
+          id: 'a',
+          name: 'Auth',
+          method: 'GET',
+          url: 'https://kc.example/realms/r/protocol/openid-connect/auth',
+          body: '',
+        }),
+        baseReq({
+          id: 'b',
+          name: 'Authenticate',
+          method: 'POST',
+          url: 'https://kc.example/realms/r/login-actions/authenticate',
+          body: 'username={{user}}&password={{pass}}',
+        }),
+      ],
       scenarioName: 'sc',
-      vus: 5,
-      duration: '2m',
+      vus: 1,
+      duration: '1m',
       thresholds: [],
       scenarios: [],
       activeEnvironment: 'staging',
@@ -125,10 +140,65 @@ describe('buildK6Script load controls', () => {
       dataCsv: '',
       runPurpose: 'performance',
       collectionExecution: 'sequential',
-      collectionLoadVus: 2,
-      collectionLoadDuration: '3m',
     })
-    expect(script).toContain('exec.scenario.iterationInTest === 1')
+    expect(script).toContain('function perfMixKeycloakAuthPostBody(')
+    expect(script).toContain('perfMixKeycloakAuthPostBody(tmpl(')
+    expect(script).toContain('perfMixKeycloakAuthPostBody(tmpl("username={{user}}&password={{pass}}"), RUNTIME)')
+  })
+
+  it('sequential setup + main requests emit k6 setup() and merge setupRuntime into default', () => {
+    const script = buildK6Script({
+      mode: 'collection',
+      selectedRequestId: 'setup1',
+      requests: [
+        baseReq({
+          id: 'setup1',
+          name: 'Login',
+          jmeterThreadGroupKind: 'setup',
+        }),
+        baseReq({
+          id: 'main1',
+          name: 'HitApi',
+        }),
+      ],
+      scenarioName: 'sc',
+      vus: 1,
+      duration: '1m',
+      thresholds: [],
+      scenarios: [],
+      activeEnvironment: 'staging',
+      envVariables: {},
+      sharedVariables: {},
+      dataCsv: '',
+      runPurpose: 'performance',
+      collectionExecution: 'sequential',
+    })
+    expect(script).toContain('export function setup(')
+    expect(script).toContain('Object.assign(RUNTIME, (data && data.setupRuntime)')
+    expect(script).toContain('Sequential main requests')
+  })
+
+  it('parallel collection export prepends a note when setup-phase requests exist', () => {
+    const script = buildK6Script({
+      mode: 'collection',
+      selectedRequestId: 's',
+      requests: [
+        baseReq({ id: 's', name: 'SetupStep', jmeterThreadGroupKind: 'setup' }),
+        baseReq({ id: 'm', name: 'MainStep' }),
+      ],
+      scenarioName: 'sc',
+      vus: 1,
+      duration: '1m',
+      thresholds: [],
+      scenarios: [],
+      activeEnvironment: 'staging',
+      envVariables: {},
+      sharedVariables: {},
+      dataCsv: '',
+      runPurpose: 'performance',
+      collectionExecution: 'parallel',
+    })
+    expect(script).toContain('NOTE: This collection has setup-phase requests')
   })
 
   it('exports CLI env comment block', () => {
